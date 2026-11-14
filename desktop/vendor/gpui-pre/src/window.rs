@@ -3846,13 +3846,6 @@ impl Window {
     fn present(&mut self) {
         #[cfg(feature = "profiler")]
         let _foreground_turn = profiler::journal::foreground_turn();
-        if !self.present_updates.is_empty() && !self.platform_window.can_present_with_updates() {
-            // Waiting for an older drawable is not a failed render attempt.
-            self.needs_present.set(true);
-            self.platform_window.schedule_frame();
-            profiling::finish_frame!();
-            return;
-        }
         #[cfg(feature = "profiler")]
         let present_start = Instant::now();
         let presented = if self.present_updates.is_empty() {
@@ -3890,12 +3883,6 @@ impl Window {
     #[cfg(any(test, feature = "test-support"))]
     pub fn simulate_failed_presentations(&mut self, count: usize) {
         self.platform_window.as_test().expect("test platform window").0.lock().presentations_to_fail = count;
-    }
-
-    /// Makes the test platform defer native updates behind older drawables.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn simulate_deferred_presentations(&mut self, count: usize) {
-        self.platform_window.as_test().expect("test platform window").0.lock().presentations_to_defer = count;
     }
 
     /// Simulates a platform presentation request; returns remaining presentation

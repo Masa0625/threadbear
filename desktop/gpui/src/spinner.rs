@@ -776,26 +776,6 @@ mod spinner_tests {
     }
 
     #[gpui_kit::test]
-    fn waiting_for_older_drawables_does_not_spend_the_failure_budget(cx: &mut TestAppContext) {
-        let handle = cx.open_window(size(px(100.), px(100.)), |_, _| SpinnerHost { arc: false, visible: false, clipped: false });
-        let applied = Rc::new(Cell::new(0));
-        cx.run_until_parked();
-        cx.update_window(handle.into(), |_, window, cx| {
-            window.draw(cx).clear(cx);
-            let applied = applied.clone();
-            let count = applied.clone();
-            window.defer_until_present(move || count.set(count.get() + 1));
-            window.simulate_deferred_presentations(5);
-            for _ in 0..5 { assert_eq!(window.simulate_presentation(false), (true, 1)); }
-            assert_eq!(applied.get(), 0, "native layers cannot overtake earlier drawables");
-            window.simulate_failed_presentations(2);
-            for _ in 0..2 { assert_eq!(window.simulate_presentation(false), (true, 1)); }
-            assert_eq!(window.simulate_presentation(false), (false, 0));
-            assert_eq!(applied.get(), 1);
-        }).unwrap();
-    }
-
-    #[gpui_kit::test]
     fn overlays_are_known_before_the_underlying_canvas_paints(cx: &mut TestAppContext) {
         let seen = Rc::new(Cell::new(true));
         let window = cx.open_window(size(px(100.), px(100.)), |_, _| OverlayProbe { open: false, seen: seen.clone() });

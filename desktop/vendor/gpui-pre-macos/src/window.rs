@@ -2155,10 +2155,6 @@ impl PlatformWindow for MacWindow {
         this.renderer.draw(scene);
     }
 
-    fn can_present_with_updates(&self) -> bool {
-        !self.0.lock().renderer.has_pending_presentations()
-    }
-
     fn draw_with_updates(&self, scene: &gpui::Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
         // Use the same detached, synchronous renderer path as display_layer.
         // A display-link drawable has its own target presentation time and must
@@ -2194,13 +2190,16 @@ impl PlatformWindow for MacWindow {
             if restart { state.stop_display_link(); }
             state.set_presents_with_transaction(true);
         }
-        let presented = self.0.lock().renderer.draw_if_ready(scene);
-        // Layer operations may call back into MacWindowState. Release its mutex
-        // before applying client changes or committing the outer transaction.
-        if presented {
+        let frame = self.0.lock().renderer.prepare_draw(scene);
+        // No live layers change if drawable acquisition or encoding failed.
+        // Release the mutex before client changes, and finish those changes
+        // BEFORE present() chooses the current Core Animation transaction.
+        // https://developer.apple.com/documentation/quartzcore/cametallayer/presentswithtransaction
+        if let Some(frame) = frame {
             for update in updates.drain(..) { update(); }
-        }
-        presented
+            frame.present();
+            true
+        } else { false }
     }
 
     // GPUI calls this without waking the frame waker when a window only needs

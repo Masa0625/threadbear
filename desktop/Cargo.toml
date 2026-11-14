@@ -37,8 +37,8 @@ gpui-pre = { path = "vendor/gpui-pre" }
 # Pair native arc layer changes with their replacement Metal scene using the
 # renderer's existing transaction presentation mode. Retain on snapshot bumps.
 gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
-# Preserve the existing draw API while reporting whether a drawable was
-# actually presented; failed frames cannot commit their native layer changes.
+# Prepare the GPU scene before native changes, then present after those
+# changes inside the same Core Animation transaction. Keep the old draw API.
 gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
 
 # Scripted screenshots run in debug apps, often at background priority. An

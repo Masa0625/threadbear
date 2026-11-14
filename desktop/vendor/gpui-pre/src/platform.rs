@@ -1327,8 +1327,6 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn on_appearance_changed(&self, callback: Box<dyn FnMut()>);
     fn on_button_layout_changed(&self, _callback: Box<dyn FnMut()>) {}
     fn draw(&self, scene: &Scene);
-    /// Whether older drawables have finished, so native changes cannot overtake them.
-    fn can_present_with_updates(&self) -> bool { true }
     /// Applies native layer changes with the scene that replaces them.
     fn draw_with_updates(&self, scene: &Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
         self.draw(scene);

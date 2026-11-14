@@ -1,5 +1,4 @@
 use crate::metal_atlas::MetalAtlas;
-use crate::presentation::PresentationTracker;
 use anyhow::{Context as _, Result};
 use block2::RcBlock;
 use gpui::{
@@ -33,6 +32,29 @@ use objc2_quartz_core::{CAMetalDrawable, CAMetalLayer};
 use parking_lot::Mutex;
 
 use std::{cell::Cell, mem, mem::MaybeUninit, ops::Range, ptr, slice, sync::Arc};
+
+/// One encoded drawable. Presentation belongs to the encoding thread's current
+/// Core Animation transaction, so this value cannot cross threads.
+pub struct PreparedFrame {
+    command_buffer: Retained<ProtocolObject<dyn MTLCommandBuffer>>,
+    drawable: Retained<ProtocolObject<dyn CAMetalDrawable>>,
+    transaction: bool,
+    not_send: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl PreparedFrame {
+    /// Schedules the encoded drawable after all native layer changes are ready.
+    pub fn present(self) {
+        if self.transaction {
+            self.command_buffer.commit();
+            self.command_buffer.waitUntilScheduled();
+            self.drawable.present();
+        } else {
+            self.command_buffer.presentDrawable(ProtocolObject::from_ref(&*self.drawable));
+            self.command_buffer.commit();
+        }
+    }
+}
 
 // Exported to metal
 pub(crate) type PointF = gpui::Point<f32>;
@@ -132,7 +154,6 @@ pub struct MetalRenderer {
     is_apple_gpu: bool,
     is_unified_memory: bool,
     presents_with_transaction: bool,
-    presentations: PresentationTracker,
     display_link_mode: DisplayLinkMode,
     /// For headless rendering, tracks whether output should be opaque
     opaque: bool,
@@ -420,7 +441,6 @@ impl MetalRenderer {
             device,
             layer,
             presents_with_transaction: false,
-            presentations: PresentationTracker::default(),
             display_link_mode: DisplayLinkMode::Detached,
             is_apple_gpu,
             is_unified_memory,
@@ -595,29 +615,26 @@ impl MetalRenderer {
     }
 
     pub fn draw(&mut self, scene: &Scene) {
-        self.draw_if_ready(scene);
+        if let Some(frame) = self.prepare_draw(scene) { frame.present(); }
     }
 
-    /// Previous link drawables may still be waiting for their target vsync.
-    pub fn has_pending_presentations(&self) -> bool { self.presentations.pending() }
-
-    /// Whether this scene reached drawable presentation. Native sublayers may
-    /// change with it only after success, inside the same CA transaction.
-    pub fn draw_if_ready(&mut self, scene: &Scene) -> bool {
+    /// Encodes the scene without presenting it. A native-layer client can then
+    /// update its layers before scheduling this drawable in the same transaction.
+    pub fn prepare_draw(&mut self, scene: &Scene) -> Option<PreparedFrame> {
         let layer = match &self.layer {
             Some(l) => l.clone(),
             None => {
                 log::error!(
                     "draw() called on headless renderer - use render_scene_to_image() instead"
                 );
-                return false;
+                return None;
             }
         };
         let drawable = match &mut self.display_link_mode {
             DisplayLinkMode::Attached { drawable } => {
                 let Some(drawable) = drawable.take() else {
                     log::error!("skipped a frame drawn outside its display link's update");
-                    return false;
+                    return None;
                 };
                 drawable
             }
@@ -627,7 +644,7 @@ impl MetalRenderer {
                         "failed to retrieve next drawable, drawable size: {:?}",
                         layer.drawableSize()
                     );
-                    return false;
+                    return None;
                 };
                 drawable
             }
@@ -644,24 +661,12 @@ impl MetalRenderer {
             Ok(command_buffer) => command_buffer,
             Err(error) => {
                 log::error!("failed to render: {error:#}");
-                return false;
+                return None;
             }
         };
 
-        let pending = self.presentations.begin();
-        let shown = RcBlock::new(move |_: ptr::NonNull<ProtocolObject<dyn MTLDrawable>>| pending.complete());
-        // SAFETY: Metal copies the block. Its owned atomic guard tolerates
-        // completion on another thread and cancellation without a callback.
-        unsafe { drawable.addPresentedHandler(RcBlock::as_ptr(&shown)); }
-        if self.presents_with_transaction {
-            command_buffer.commit();
-            command_buffer.waitUntilScheduled();
-            drawable.present();
-        } else {
-            command_buffer.presentDrawable(ProtocolObject::from_ref(&*drawable));
-            command_buffer.commit();
-        }
-        true
+        Some(PreparedFrame { command_buffer, drawable, transaction: self.presents_with_transaction,
+            not_send: std::marker::PhantomData })
     }
 
     fn render_frame(
