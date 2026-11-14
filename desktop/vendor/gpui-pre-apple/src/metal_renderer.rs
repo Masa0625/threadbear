@@ -33,8 +33,9 @@ use parking_lot::Mutex;
 
 use std::{cell::Cell, mem, mem::MaybeUninit, ops::Range, ptr, slice, sync::Arc};
 
-/// One encoded drawable. Presentation belongs to the encoding thread's current
-/// Core Animation transaction, so this value cannot cross threads.
+/// One encoded drawable, confined to its encoding thread. The caller must
+/// present it in the same Core Animation transaction, without changing the
+/// layer's presentation mode between preparation and presentation.
 pub struct PreparedFrame {
     command_buffer: Retained<ProtocolObject<dyn MTLCommandBuffer>>,
     drawable: Retained<ProtocolObject<dyn CAMetalDrawable>>,

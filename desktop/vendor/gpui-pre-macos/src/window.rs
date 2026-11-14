@@ -2177,7 +2177,8 @@ impl PlatformWindow for MacWindow {
             let restart = matches!(&state.frame_source, FrameSource::Metal(frames) if frames.is_attached());
             (previous, restart)
         };
-        // Commit before restoring the layer property or restarting its link.
+        // Close our explicit transaction before restoring the layer property
+        // or restarting its link. AppKit may still own an outer transaction.
         let _restore = Restore { window: &self.0, previous, restart };
         struct Transaction;
         impl Drop for Transaction {
