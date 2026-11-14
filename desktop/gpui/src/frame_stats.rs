@@ -139,9 +139,12 @@ fn ms(nanos: u64) -> f64 {
 #[cfg(feature = "automation")]
 fn dirty_to_present_ms(now: &FrameDurationSnapshot, before: Option<&FrameDurationSnapshot>) -> Value {
     // workMs stops before platform submission. This existing histogram runs
-    // through submission. It includes waiting for the frame signal, drawing,
+    // from the frame's first invalidation through submission. It includes
+    // waiting for the frame signal, drawing,
     // and submission (including a blocked Metal drawable acquisition).
     // It is not pure submission time or the pixels reaching the display.
+    // Compare paired runs with the same input; subtracting workMs does not
+    // isolate time spent in GPU work or submission.
     let mut durations = now.dirty_to_present_histogram.clone();
     if before.is_some_and(|before| durations.subtract(&before.dirty_to_present_histogram).is_err()) {
         return json!({ "error": "handoff baseline does not belong to this frame history" });
