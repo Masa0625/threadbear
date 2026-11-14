@@ -651,6 +651,59 @@ mod spinner_tests {
 
     struct TwoViews([Entity<SpinnerHost>; 2]);
 
+    // MainPanelView renders its page through a model update lease. That model
+    // is not a view in the dispatch tree; the cached page is the clock target.
+    struct PageData;
+    struct CachedPage {
+        data: gpui_kit::WeakEntity<PageData>,
+        renders: Rc<Cell<u32>>,
+        _changed: gpui_kit::Subscription,
+    }
+    impl Render for CachedPage {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            self.renders.set(self.renders.get() + 1);
+            self.data.upgrade().unwrap().update(cx, |_, _| {
+                div().size_full().child(Spinner::new().with_size(px(16.)).color(hsla(0., 0., 1., 1.)))
+            })
+        }
+    }
+    struct PageRoot { data: Entity<PageData>, page: Entity<CachedPage> }
+    impl Render for PageRoot {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(self.page.clone().cached(StyleRefinement::default().size(px(24.))))
+        }
+    }
+
+    #[gpui_kit::test]
+    fn a_cached_non_thread_page_keeps_turning_without_model_notifications(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_reduce_motion(false));
+        let renders = Rc::new(Cell::new(0));
+        let window = cx.open_window(size(px(100.), px(100.)), |_, cx| {
+            let data = cx.new(|_| PageData);
+            let page = cx.new(|cx| CachedPage {
+                data: data.downgrade(), renders: renders.clone(),
+                _changed: cx.observe(&data, |_, _, cx| cx.notify()),
+            });
+            PageRoot { data, page }
+        });
+        cx.run_until_parked();
+        let (data, page) = cx.update(|cx| { let root = window.read(cx).unwrap(); (root.data.clone(), root.page.entity_id()) });
+        let model_notifications = Rc::new(Cell::new(0));
+        let count = model_notifications.clone();
+        let _watch = cx.update(|cx| cx.observe(&data, move |_, _| count.set(count.get() + 1)));
+        assert_eq!(pending(cx, window.window_id()), HashSet::from([page]));
+        assert!(!pending(cx, window.window_id()).contains(&data.entity_id()));
+        for _ in 0..6 {
+            let before = renders.get();
+            cx.executor().advance_clock(FRAME * 2);
+            assert_eq!(window.update(cx, |_, window, cx| window.simulate_next_frame(cx)).unwrap(), 1);
+            cx.run_until_parked();
+            assert!(renders.get() > before, "the clock must dirty the retained cached page");
+            assert_eq!(pending(cx, window.window_id()), HashSet::from([page]));
+            assert_eq!(model_notifications.get(), 0, "model updates cannot conceal a stalled loader");
+        }
+    }
+
     impl Render for TwoViews {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             // Exercise the real cached-parent path as well as normal rendering.
