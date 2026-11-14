@@ -651,9 +651,14 @@ mod spinner_tests {
 
     struct TwoViews([Entity<SpinnerHost>; 2]);
 
-    // MainPanelView renders its page through a model update lease. That model
-    // is not a view in the dispatch tree; the cached page is the clock target.
+    // MainPanelView renders through an update lease of the app entity. A
+    // lease must not replace the cached page as the clock's repaint target.
     struct PageData;
+    impl Render for PageData {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
     struct CachedPage {
         data: gpui_kit::WeakEntity<PageData>,
         renders: Rc<Cell<u32>>,
@@ -667,9 +672,10 @@ mod spinner_tests {
             })
         }
     }
-    struct PageRoot { data: Entity<PageData>, page: Entity<CachedPage> }
+    struct PageRoot { data: Entity<PageData>, page: Entity<CachedPage>, renders: Rc<Cell<u32>> }
     impl Render for PageRoot {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            self.renders.set(self.renders.get() + 1);
             div().size_full().child(self.page.clone().cached(StyleRefinement::default().size(px(24.))))
         }
     }
@@ -678,13 +684,14 @@ mod spinner_tests {
     fn a_cached_non_thread_page_keeps_turning_without_model_notifications(cx: &mut TestAppContext) {
         cx.update(|cx| cx.set_reduce_motion(false));
         let renders = Rc::new(Cell::new(0));
+        let root_renders = Rc::new(Cell::new(0));
         let window = cx.open_window(size(px(100.), px(100.)), |_, cx| {
             let data = cx.new(|_| PageData);
             let page = cx.new(|cx| CachedPage {
                 data: data.downgrade(), renders: renders.clone(),
                 _changed: cx.observe(&data, |_, _, cx| cx.notify()),
             });
-            PageRoot { data, page }
+            PageRoot { data, page, renders: root_renders.clone() }
         });
         cx.run_until_parked();
         let (data, page) = cx.update(|cx| { let root = window.read(cx).unwrap(); (root.data.clone(), root.page.entity_id()) });
@@ -695,10 +702,16 @@ mod spinner_tests {
         assert!(!pending(cx, window.window_id()).contains(&data.entity_id()));
         for _ in 0..6 {
             let before = renders.get();
+            let root_before = root_renders.get();
+            window.update(cx, |_, _, cx| cx.notify()).unwrap();
+            cx.run_until_parked();
+            assert_eq!(root_renders.get(), root_before + 1, "exercise a real unrelated root repaint");
+            assert_eq!(renders.get(), before, "the unchanged page must reuse its cached drawing");
+            assert_eq!(pending(cx, window.window_id()), HashSet::from([page]));
             cx.executor().advance_clock(FRAME * 2);
             assert_eq!(window.update(cx, |_, window, cx| window.simulate_next_frame(cx)).unwrap(), 1);
             cx.run_until_parked();
-            assert!(renders.get() > before, "the clock must dirty the retained cached page");
+            assert_eq!(renders.get(), before + 1, "the clock must repaint the retained cached page exactly once");
             assert_eq!(pending(cx, window.window_id()), HashSet::from([page]));
             assert_eq!(model_notifications.get(), 0, "model updates cannot conceal a stalled loader");
         }
