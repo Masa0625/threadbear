@@ -97,10 +97,12 @@ jobs:
           cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui spinner:: -- --list > loader-tests.txt
           cat loader-tests.txt
           count=$(awk '/^spinner::.*: test$/ { n++ } END { print n+0 }' loader-tests.txt)
-          test "$count" -ge 16
+          test "$count" -ge 17
           if [ "$RUNNER_OS" = macOS ]; then
-            count=$(awk '/^spinner::arc_probe::placement_tests::.*: test$/ { n++ } END { print n+0 }' loader-tests.txt)
-            test "$count" -ge 4
+            count=$(awk '/^spinner::arc_policy::tests::.*: test$/ { n++ } END { print n+0 }' loader-tests.txt)
+            test "$count" -ge 8
+            count=$(awk '/^spinner::arc_probe::host_lifetime_tests::.*: test$/ { n++ } END { print n+0 }' loader-tests.txt)
+            test "$count" -ge 1
           fi
           cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui spinner::
           cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui frame_stats:: -- --list > frame-stats-tests.txt

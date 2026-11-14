@@ -41,6 +41,10 @@ use std::time::{Duration, Instant};
 const TURN_SECONDS: f64 = 0.9;
 const FRAME: Duration = Duration::from_millis(20);
 
+#[cfg(all(target_os = "macos", feature = "automation"))]
+#[path = "spinner/arc_policy.rs"]
+mod arc_policy;
+
 #[cfg(test)]
 thread_local! {
     static RENDERS: [Cell<u32>; 2] = const { [Cell::new(0), Cell::new(0)] };
@@ -328,21 +332,24 @@ fn paint_layer(draw: bool, window: &mut Window, cx: &mut App,
     // This native-overlay experiment is available only in scripted builds.
     // It intentionally has no production path until overlay ordering is proved.
     #[cfg(all(target_os = "macos", feature = "automation"))]
-    let (native, pending) = if arc_probe::enabled() {
+    let native = if arc_probe::enabled() {
         use gpui_kit::component::WindowExt as _;
         let gates = [!draw, blocked, RASTER_CAPTURE.get(), window.has_deferred_draws(),
             window.has_tooltip(), window.has_component_overlay(cx), window.has_active_prompt(), cx.has_active_drag()];
         let flags = gates.into_iter().enumerate().fold(0, |flags, (i, blocked)| flags | (u32::from(blocked) << i));
         let (draw_native, update) = native.borrow_mut().prepare(&arcs, flags, &open, window);
-        let pending = update.is_some();
         if let Some(update) = update {
-            let native = native.clone();
-            window.defer_until_present(move || native.borrow_mut().apply(update));
+            let applied = native.clone();
+            let failed = native.clone();
+            window.defer_until_present_with_fallback(
+                move || applied.borrow_mut().apply(update),
+                move || failed.borrow_mut().failed(id),
+            );
         }
-        (draw_native, pending)
-    } else { (false, false) };
+        draw_native
+    } else { false };
     #[cfg(not(all(target_os = "macos", feature = "automation")))]
-    let (native, pending) = (false, false);
+    let native = false;
     #[cfg(feature = "frame-stats")]
     RUST_ARC_PAINTS.with(|paints| {
         let mut paints = paints.borrow_mut();
@@ -357,28 +364,14 @@ fn paint_layer(draw: bool, window: &mut Window, cx: &mut App,
     FRAMES.set(frame + 1);
     // The next turn: this layer's view draws again (and the root with it),
     // not the sidebar.
-    next_arc_frame(!arcs.is_empty(), native, pending, window, cx);
-}
-
-fn next_arc_frame(has_arcs: bool, native: bool, pending: bool, window: &mut Window, cx: &mut App) {
-    // A native restore is not confirmed until its matching Metal frame was
-    // submitted. Keep one tick until then: the platform's bounded retries may
-    // run out while a drawable is unavailable. No arcs means no clock demand.
-    if has_arcs && (!native || pending) { next_frame(window, cx); }
+    if !arcs.is_empty() && !native { next_frame(window, cx); }
 }
 
 #[cfg(all(target_os = "macos", feature = "automation"))]
 mod arc_probe {
     use super::*;
+    use super::arc_policy::{Spec, State, Target};
     use std::ffi::c_void;
-
-    #[repr(C)]
-    #[derive(Clone, PartialEq)]
-    struct Spec {
-        center_x: f32, center_y: f32, side: f32, radius: f32, width: f32,
-        clip_x: f32, clip_y: f32, clip_w: f32, clip_h: f32,
-        r: f32, g: f32, b: f32, a: f32,
-    }
     #[repr(C)]
     #[derive(Default)]
     struct Health {
@@ -395,95 +388,14 @@ mod arc_probe {
     impl Drop for Host {
         fn drop(&mut self) { unsafe { tb_arc_probe_drop(self.0); } }
     }
-    const SETTLE: Duration = Duration::from_millis(150);
-    struct Placement {
-        specs: Vec<Spec>,
-        scale: f32,
-        flags: u32,
-        changed: Instant,
-        applied_updates: u64,
-    }
-    impl Placement {
-        fn observe(&mut self, specs: &[Spec], scale: f32, flags: u32, now: Instant) -> bool {
-            if self.specs != specs || (!specs.is_empty() && self.scale != scale) || self.flags != flags {
-                self.specs = specs.to_vec(); self.scale = scale; self.flags = flags; self.changed = now;
-            }
-            now.saturating_duration_since(self.changed) >= SETTLE
-        }
-    }
     #[derive(Default)]
     pub(super) struct Hosts {
         hosts: HashMap<WindowId, Host>,
-        gates: HashMap<WindowId, u32>,
-        committed: HashMap<WindowId, (Vec<Spec>, f32)>,
-        observed: HashMap<WindowId, Placement>,
-    }
-
-    #[cfg(test)]
-    mod placement_tests {
-        use super::{Hosts, Placement, Spec, SETTLE};
-        use gpui_kit::WindowId;
-        use std::collections::HashSet;
-        use std::time::{Duration, Instant};
-        fn spec(y: f32) -> Spec {
-            Spec { center_x: 10., center_y: y, side: 12., radius: 4.5, width: 1.6,
-                clip_x: 0., clip_y: 0., clip_w: 100., clip_h: 100., r: 0., g: 0.5, b: 1., a: 1. }
-        }
-        fn placement(now: Instant) -> Placement { Placement { specs: vec![spec(10.)], scale: 1., flags: 0, changed: now, applied_updates: 0 } }
-        #[test]
-        fn identical_paints_settle_from_the_last_change_not_the_last_paint() {
-            let now = Instant::now();
-            let mut p = placement(now);
-            for ms in [0, 16, 32, 80, 149] { assert!(!p.observe(&[spec(10.)], 1., 0, now + Duration::from_millis(ms))); }
-            assert!(p.observe(&[spec(10.)], 1., 0, now + SETTLE));
-            assert!(p.observe(&[spec(10.)], 1., 0, now + Duration::from_secs(60)));
-        }
-        #[test]
-        fn moving_rows_and_gate_changes_restart_the_settle_interval() {
-            let now = Instant::now();
-            let mut p = placement(now);
-            for ms in (16..=2000).step_by(16) {
-                assert!(!p.observe(&[spec(ms as f32)], 1., 0, now + Duration::from_millis(ms)));
-            }
-            let at = now + Duration::from_millis(2000);
-            assert!(!p.observe(&[spec(2000.)], 1., 1, at));
-            assert!(p.observe(&[spec(2000.)], 1., 1, at + SETTLE));
-            // A gate clearing must settle too, even with unchanged geometry.
-            assert!(!p.observe(&[spec(2000.)], 1., 0, at + SETTLE));
-            assert!(p.observe(&[spec(2000.)], 1., 0, at + SETTLE * 2));
-        }
-        #[test]
-        fn scale_clip_and_opacity_are_observed_but_empty_placement_has_no_scale() {
-            let now = Instant::now();
-            let mut p = placement(now);
-            assert!(!p.observe(&[spec(10.)], 2., 0, now + SETTLE));
-            let mut clipped = spec(10.); clipped.clip_h = 90.;
-            assert!(!p.observe(&[clipped.clone()], 2., 0, now + SETTLE * 2));
-            clipped.a = 0.5;
-            assert!(!p.observe(&[clipped.clone()], 2., 0, now + SETTLE * 3));
-            assert!(p.observe(&[clipped], 2., 0, now + SETTLE * 4));
-            assert!(!p.observe(&[], 1., 0, now + SETTLE * 5));
-            assert!(p.observe(&[], 3., 0, now + SETTLE * 6));
-        }
-        #[test]
-        fn placement_clocks_are_per_window_and_retire_with_the_window() {
-            let now = Instant::now();
-            let a = WindowId::from(10u64); let b = WindowId::from(11u64);
-            let mut hosts = Hosts::default();
-            hosts.observed.insert(a, placement(now));
-            hosts.observed.insert(b, placement(now + Duration::from_millis(100)));
-            assert!(hosts.observed.get_mut(&a).unwrap().observe(&[spec(10.)], 1., 0, now + SETTLE));
-            assert!(!hosts.observed.get_mut(&b).unwrap().observe(&[spec(10.)], 1., 0, now + SETTLE));
-            hosts.prune(&HashSet::from([b]));
-            assert!(!hosts.observed.contains_key(&a));
-            hosts.remove(b);
-            assert!(hosts.observed.is_empty());
-        }
+        states: HashMap<WindowId, State>,
     }
     pub(super) struct Update {
         id: WindowId,
-        specs: Vec<Spec>,
-        scale: f32,
+        target: Target,
         flags: u32,
     }
 
@@ -493,26 +405,26 @@ mod arc_probe {
     }
 
     impl Hosts {
-        pub(super) fn remove(&mut self, id: WindowId) { self.hosts.remove(&id); self.gates.remove(&id); self.committed.remove(&id); self.observed.remove(&id); }
+        pub(super) fn remove(&mut self, id: WindowId) { self.hosts.remove(&id); self.states.remove(&id); }
         fn prune(&mut self, open: &HashSet<WindowId>) {
-            self.gates.retain(|key, _| open.contains(key));
             self.hosts.retain(|key, _| open.contains(key));
-            self.committed.retain(|key, _| open.contains(key));
-            self.observed.retain(|key, _| open.contains(key));
+            self.states.retain(|key, _| open.contains(key));
         }
         pub(super) fn report(&self, id: WindowId) -> serde_json::Value {
             let mut health = Health::default();
             if let Some(host) = self.hosts.get(&id) {
                 unsafe { tb_arc_probe_snapshot(host.0, &mut health); }
             }
-            let flags = self.gates.get(&id).copied().unwrap_or_default();
-            let names = ["dock-drag", "app-overlay", "capture", "deferred", "tooltip", "component-overlay", "prompt", "drag", "placement-changing"];
+            let state = self.states.get(&id);
+            let flags = state.map_or(0, |s| s.flags);
+            let names = ["dock-drag", "app-overlay", "capture", "deferred", "tooltip", "component-overlay", "prompt", "drag", "placement-changing", "native-backoff"];
             let blocked: Vec<_> = names.into_iter().enumerate().filter_map(|(i, name)| (flags & (1 << i) != 0).then_some(name)).collect();
             serde_json::json!({"requested": enabled(), "backend": if health.visible > 0 { "core-animation" } else { "rust" },
                 "blockedBy": blocked, "placed": health.placed, "visible": health.visible, "animating": health.animating,
                 "presented": health.presented, "phase": health.phase, "periodSeconds": health.period,
                 "expectedPeriodSeconds": TURN_SECONDS, "snapshotSeconds": health.time,
-                "appliedUpdates": self.observed.get(&id).map_or(0, |p| p.applied_updates)})
+                "lifetimeAppliedUpdates": state.map_or(0, |s| s.lifetime_applied_updates),
+                "lifetimeNativeFailures": state.map_or(0, |s| s.lifetime_failures)})
         }
         // ArcLayer is uncached and paints on every draw. Preparation may create
         // an empty host, but visible mutations wait for the matching GPU scene.
@@ -530,41 +442,53 @@ mod arc_probe {
                     r: color.r, g: color.g, b: color.b, a: color.a,
                 }
             }).collect();
-            // Observe the real placement, even while another gate hides the
-            // host. Comparing the committed (empty) target could never settle.
-            let now = Instant::now();
-            let scale = window.scale_factor();
-            let observed = self.observed.entry(id).or_insert_with(|| Placement {
-                specs: specs.clone(), scale, flags, changed: now, applied_updates: 0,
-            });
-            let stable = observed.observe(&specs, scale, flags, now);
-            let flags = flags | if stable { 0 } else { 1 << 8 };
-            let draw = flags == 0;
-            let specs = if draw { specs } else { Vec::new() };
-            if specs.is_empty() && !self.hosts.contains_key(&id) {
-                self.gates.insert(id, flags);
-                return (draw, None);
-            }
+            let decision = self.states.entry(id).or_default().decide(&specs, window.scale_factor(), flags, self.hosts.contains_key(&id), Instant::now());
+            let Some(target) = decision.update else { return (decision.native, None); };
             if !self.hosts.contains_key(&id) {
-                let Some(parent) = crate::web_panels::native_view(window) else { return (false, None); };
+                let Some(parent) = crate::web_panels::native_view(window) else { self.failed(id); return (false, None); };
                 let raw = unsafe { tb_arc_probe_create(parent) };
-                if raw.is_null() { return (false, None); }
+                if raw.is_null() { self.failed(id); return (false, None); }
                 self.hosts.insert(id, Host(raw));
             }
-            if self.committed.get(&id).is_some_and(|(old, old_scale)| *old == specs && (specs.is_empty() || *old_scale == scale)) {
-                self.gates.insert(id, flags);
-                return (draw, None);
-            }
-            (draw, Some(Update { id, specs, scale, flags }))
+            let flags = self.states[&id].flags;
+            (decision.native, Some(Update { id, target, flags }))
         }
 
         pub(super) fn apply(&mut self, update: Update) {
             // Closing the window may have removed the host after this draw.
             let Some(host) = self.hosts.get(&update.id) else { return; };
-            unsafe { tb_arc_probe_set(host.0, update.specs.as_ptr(), update.specs.len(), arc_phase(), TURN_SECONDS); }
-            self.gates.insert(update.id, update.flags);
-            self.committed.insert(update.id, (update.specs, update.scale));
-            if let Some(observed) = self.observed.get_mut(&update.id) { observed.applied_updates += 1; }
+            unsafe { tb_arc_probe_set(host.0, update.target.specs.as_ptr(), update.target.specs.len(), arc_phase(), TURN_SECONDS); }
+            if let Some(state) = self.states.get_mut(&update.id) { state.applied(update.target, update.flags); }
+        }
+
+        pub(super) fn failed(&mut self, id: WindowId) {
+            // Fault-only degradation: hide decoration before a fresh Rust
+            // scene can be shown. A missing arc until that draw is safer than
+            // leaving an old native arc over a new panel. Healthy handoffs
+            // still change native layers only with their matching Metal scene.
+            if let Some(host) = self.hosts.get(&id) {
+                unsafe { tb_arc_probe_set(host.0, std::ptr::null(), 0, arc_phase(), TURN_SECONDS); }
+            }
+            if let Some(state) = self.states.get_mut(&id) { state.failed(Instant::now()); }
+        }
+    }
+
+    #[cfg(test)]
+    mod host_lifetime_tests {
+        use super::{Hosts, State};
+        use gpui_kit::WindowId;
+        use std::{collections::HashSet, time::Instant};
+        #[test]
+        fn close_and_pruning_retire_the_entire_window_state() {
+            let a = WindowId::from(10u64); let b = WindowId::from(11u64);
+            let mut hosts = Hosts::default();
+            hosts.states.entry(a).or_default().failed(Instant::now());
+            hosts.states.insert(b, State::default());
+            hosts.prune(&HashSet::from([b]));
+            assert!(!hosts.states.contains_key(&a));
+            hosts.remove(b);
+            assert!(hosts.states.is_empty());
+            assert!(hosts.hosts.is_empty());
         }
     }
 }
@@ -729,7 +653,6 @@ fn present_spinners(serial: u64, window: &mut Window, cx: &mut App) {
 mod spinner_tests {
     use super::{SpinnerClock, SpinnerFrame, Spinner, TurningArc, FRAME, RENDERS, TICKING, init_spinner_clock};
     use gpui_kit::component::Sizable as _;
-    use gpui_kit::test::TestWindowExt as _;
     use gpui_kit::prelude::FluentBuilder as _;
     use gpui_kit::{div, hsla, px, size, AppContext as _, Context, Entity, EntityId, IntoElement, ParentElement, Render, StyleRefinement, Styled as _, TestAppContext, Window, WindowHandle, WindowId};
     use std::{cell::Cell, collections::HashSet, rc::Rc};
@@ -874,56 +797,6 @@ mod spinner_tests {
                 window.defer_until_present(move || applied.borrow_mut().push(generation));
             }).size_full()
         }
-    }
-
-    struct NativeRetryProbe(Rc<Cell<bool>>);
-    impl Render for NativeRetryProbe {
-        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            let confirmed = self.0.clone();
-            gpui_kit::canvas(|_, _, _| {}, move |_, _, window, cx| {
-                if !confirmed.get() {
-                    let confirmed = confirmed.clone();
-                    window.defer_until_present(move || confirmed.set(true));
-                    super::next_arc_frame(true, true, true, window, cx);
-                }
-            }).size_full()
-        }
-    }
-    #[gpui_kit::test]
-    fn a_pending_native_restore_keeps_a_tick_beyond_the_platform_retry_budget(cx: &mut TestAppContext) {
-        let confirmed = Rc::new(Cell::new(false));
-        let window = cx.open_window(size(px(100.), px(100.)), |_, _| NativeRetryProbe(confirmed.clone()));
-        cx.run_until_parked();
-        let id = window.update(cx, |_, _, cx| cx.entity_id()).unwrap();
-        TICKING.with(|ticks| ticks.borrow_mut().clear());
-        confirmed.set(false);
-        cx.update_window(window.into(), |_, window, cx| {
-            window.simulate_failed_presentations(10);
-            window.refresh();
-            window.draw(cx).clear(cx);
-            for _ in 0..3 { window.simulate_presentation(false); }
-        }).unwrap();
-        assert!(!confirmed.get());
-        // The platform has stopped retrying this scene. Arc demand must still
-        // survive, creating fresh draws until a restore really commits.
-        for _ in 0..12 {
-            assert!(TICKING.with(|ticks| ticks.borrow().contains(&id)), "an unconfirmed restore lost its tick");
-            cx.executor().advance_clock(FRAME * 2);
-            cx.run_until_parked();
-            cx.update_window(window.into(), |_, window, cx| {
-                window.render_frame(cx);
-                window.present_if_needed();
-            }).unwrap();
-            if confirmed.get() { break; }
-        }
-        assert!(confirmed.get(), "native restore did not recover after ten failed presents");
-        cx.executor().advance_clock(FRAME * 2);
-        cx.run_until_parked();
-        cx.update_window(window.into(), |_, window, cx| {
-            window.render_frame(cx);
-            window.present_if_needed();
-        }).unwrap();
-        assert!(!TICKING.with(|ticks| ticks.borrow().contains(&id)), "a confirmed native restore left a permanent tick");
     }
 
     #[gpui_kit::test]
