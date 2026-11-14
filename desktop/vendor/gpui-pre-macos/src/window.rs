@@ -2156,11 +2156,9 @@ impl PlatformWindow for MacWindow {
     }
 
     fn draw_with_updates(&self, scene: &gpui::Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
-        // Keep a drawable supplied by the current display-link callback: asking
-        // nextDrawable for another can wait for the compositor, delaying input.
-        // Outside that callback use display_layer's detached acquisition path.
-        // Both paths encode first, then apply native changes and present in the
-        // same transaction; the prepared frame uses no later target timestamp.
+        // Use the same detached, synchronous renderer path as display_layer.
+        // A display-link drawable has its own target presentation time and must
+        // not race an earlier asynchronous frame against these native changes.
         struct Restore<'a> {
             window: &'a Rc<Mutex<MacWindowState>>,
             previous: bool,
@@ -2176,8 +2174,7 @@ impl PlatformWindow for MacWindow {
         let (previous, restart) = {
             let state = self.0.lock();
             let previous = state.presents_with_transaction;
-            let restart = matches!(&state.frame_source, FrameSource::Metal(frames) if frames.is_attached())
-                && !state.renderer.has_frame_drawable();
+            let restart = matches!(&state.frame_source, FrameSource::Metal(frames) if frames.is_attached());
             (previous, restart)
         };
         // Close our explicit transaction before restoring the layer property
