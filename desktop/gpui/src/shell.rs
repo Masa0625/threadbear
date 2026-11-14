@@ -1441,8 +1441,11 @@ impl Threadbear {
             static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
             *ENABLED.get_or_init(|| std::env::var("TB_PERF_CACHE_DOCK").as_deref() == Ok("on"))
         };
-        let dock = AnyView::from(self.dock_view.clone())
-            .when(cache_dock, |view| view.cached(StyleRefinement::default().size_full()));
+        let dock = if cache_dock {
+            AnyView::from(self.dock_view.clone()).cached(StyleRefinement::default().size_full()).into_any_element()
+        } else {
+            self.dock_view.clone().into_any_element()
+        };
         let root = div()
             .id("threadbear-shell")
             .track_focus(&self.root_focus)
