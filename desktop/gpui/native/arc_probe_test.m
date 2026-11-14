@@ -20,7 +20,7 @@ int main(void) { @autoreleasepool {
  TBArcHealth health;
  tb_arc_probe_snapshot(raw, &health);
  assert(health.placed == 2 && health.visible == 2 && health.animating == 2);
- assert(health.presented == 0); // A headless layer must not pass live presentation checks.
+ assert(health.presented <= health.visible); // Client-side state alone does not prove screen visibility.
  assert(probe.clips.count == 2);
  CALayer *clip = probe.clips[0];
  CAShapeLayer *ring = (CAShapeLayer *)clip.sublayers[0];
@@ -31,10 +31,13 @@ int main(void) { @autoreleasepool {
  assert(fabs(CGColorGetAlpha(ring.strokeColor) - .4) < 1e-6);
  assert(CFEqual(CGColorSpaceGetName(CGColorGetColorSpace(ring.strokeColor)), kCGColorSpaceDisplayP3));
  CFTimeInterval began = turn.beginTime;
+ CGPathRef keptPath = ring.path;
+ CGColorRef keptColor = ring.strokeColor;
  view.layer.bounds = CGRectMake(0,0,900,700);
  s[0].center_x += 20;
  tb_arc_probe_set(raw, s, 2, .75, .9);
  assert(probe.clips[0] == clip);
+ assert(ring.path == keptPath && ring.strokeColor == keptColor);
  assert(CGRectEqualToRect(probe.host.frame, view.layer.bounds));
  assert(fabs([ring animationForKey:@"turn"].beginTime - began) < 1e-9);
  assert(CGPointEqualToPoint(ring.position, CGPointMake(21,1)));

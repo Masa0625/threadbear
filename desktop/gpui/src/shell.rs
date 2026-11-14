@@ -1440,6 +1440,8 @@ impl Threadbear {
             let blocked = self.share_popover.is_some() || self.anything.is_some()
                 || self.tour.tour.step.is_some() || self.side.read(cx).viewer.is_open()
                 || self.flight.is_drawing(cx);
+            #[cfg(feature = "frame-stats")]
+            let blocked = blocked || self.frame_rate.is_some();
             arc_layer.update(cx, |layer, _| layer.block_native(blocked));
         }
         let root = div()

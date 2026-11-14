@@ -13,9 +13,16 @@ typedef struct {
     double phase, period, time;
 } TBArcHealth;
 
+@interface TBArcSlot : CALayer
+@property(nonatomic) TBArcSpec previous;
+@property(nonatomic) BOOL hasSpec;
+@end
+@implementation TBArcSlot
+@end
+
 @interface TBArcProbe : NSObject
 @property(nonatomic, strong) CALayer *host;
-@property(nonatomic, strong) NSMutableArray<CALayer *> *clips;
+@property(nonatomic, strong) NSMutableArray<TBArcSlot *> *clips;
 @end
 @implementation TBArcProbe
 @end
@@ -44,12 +51,14 @@ void tb_arc_probe_set(void *pointer, const TBArcSpec *specs, size_t count, doubl
     // (Display P3 on the Mac). Reuse that interpretation, not Generic RGB.
     CALayer *parent = probe.host.superlayer;
     CGColorSpaceRef colorSpace = [parent isKindOfClass:CAMetalLayer.class] ? ((CAMetalLayer *)parent).colorspace : NULL;
+    CGColorSpaceRef fallback = colorSpace ? NULL : CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    if (!colorSpace) colorSpace = fallback;
     while (probe.clips.count > count) {
         [probe.clips.lastObject removeFromSuperlayer];
         [probe.clips removeLastObject];
     }
     while (probe.clips.count < count) {
-        CALayer *clip = [CALayer layer];
+        TBArcSlot *clip = [TBArcSlot layer];
         clip.masksToBounds = YES;
         CAShapeLayer *ring = [CAShapeLayer layer];
         ring.fillColor = nil;
@@ -68,22 +77,33 @@ void tb_arc_probe_set(void *pointer, const TBArcSpec *specs, size_t count, doubl
     }
     for (size_t i = 0; i < count; ++i) {
         const TBArcSpec s = specs[i];
-        CALayer *clip = probe.clips[i];
+        TBArcSlot *clip = probe.clips[i];
+        TBArcSpec old = clip.previous;
         CAShapeLayer *ring = (CAShapeLayer *)clip.sublayers.firstObject;
         clip.frame = CGRectMake(s.clip_x, s.clip_y, s.clip_w, s.clip_h);
         ring.bounds = CGRectMake(0, 0, s.side, s.side);
         ring.position = CGPointMake(s.center_x - s.clip_x, s.center_y - s.clip_y);
-        CGMutablePathRef path = CGPathCreateMutable();
-        CGPathAddArc(path, NULL, s.side / 2, s.side / 2, s.radius, 0, 1.5 * M_PI, false);
-        ring.path = path;
-        CGPathRelease(path);
-        CGFloat components[] = {s.r, s.g, s.b, s.a};
-        CGColorRef color = colorSpace ? CGColorCreate(colorSpace, components) : CGColorCreateSRGB(s.r, s.g, s.b, s.a);
-        ring.strokeColor = color;
-        CGColorRelease(color);
+        // A scroll or hover may repaint the window many times. Moving a ring
+        // does not change its geometry or color, or restart its animation.
+        if (!clip.hasSpec || old.side != s.side || old.radius != s.radius) {
+            CGMutablePathRef path = CGPathCreateMutable();
+            CGPathAddArc(path, NULL, s.side / 2, s.side / 2, s.radius, 0, 1.5 * M_PI, false);
+            ring.path = path;
+            CGPathRelease(path);
+        }
+        if (!clip.hasSpec || old.r != s.r || old.g != s.g || old.b != s.b || old.a != s.a
+            || !ring.strokeColor || !CFEqual(CGColorGetColorSpace(ring.strokeColor), colorSpace)) {
+            CGFloat components[] = {s.r, s.g, s.b, s.a};
+            CGColorRef color = CGColorCreate(colorSpace, components);
+            ring.strokeColor = color;
+            CGColorRelease(color);
+        }
         ring.lineWidth = s.width;
         ring.contentsScale = probe.host.superlayer.contentsScale;
+        clip.previous = s;
+        clip.hasSpec = YES;
     }
+    if (fallback) CGColorSpaceRelease(fallback);
     [CATransaction commit];
 }
 

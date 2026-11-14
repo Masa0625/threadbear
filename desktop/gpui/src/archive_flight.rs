@@ -167,9 +167,17 @@ impl Flights {
 
     /// The flights, over the whole window. Drawn by the shell.
     pub(crate) fn overlay(&mut self, cx: &mut App) -> AnyElement {
-        if !self.is_drawing(cx) { return div().into_any_element(); }
+        if !self.is_drawing(cx) { return div().absolute().into_any_element(); }
         let view = self.view.get_or_insert_with(|| cx.new(|_| FlightView::default())).clone();
         deferred(div().absolute().top_0().left_0().size_full().child(view)).with_priority(1).into_any_element()
+    }
+
+    fn push_card<T: 'static>(&mut self, card: Card, cx: &mut Context<T>) {
+        let view = self.view.get_or_insert_with(|| cx.new(|_| FlightView::default())).clone();
+        view.update(cx, |view, cx| { view.cards.push(card); cx.notify(); });
+        // An unmounted child cannot redraw its parent. Mount it once; its
+        // later animation frames notify only the flight view.
+        cx.notify();
     }
 
     /// A heading's box or moon, bouncing for a moment when a page lands in
@@ -257,15 +265,8 @@ impl Threadbear {
             "landed": false,
             "landedBox": Value::Null,
         }));
-        let view = self.flight.view.get_or_insert_with(|| cx.new(|_| FlightView::default())).clone();
-        view.update(cx, |v, cx| {
-            v.cards.push(card);
-            cx.notify();
-        });
+        self.flight.push_card(card, cx);
         self.flight.flying.insert(id.to_owned(), to);
-        // The empty flight view is not mounted. Notify its parent once so
-        // the first card is mounted; later turns notify only the flight view.
-        cx.notify();
         let id = id.to_owned();
         let launched = Instant::now();
         cx.spawn(async move |this, cx| {
@@ -431,7 +432,7 @@ fn transcript_shape(card: &Card, scale: f32, line: Hsla, bubble: Hsla) -> impl I
 
 #[cfg(all(test, feature = "automation"))]
 mod native_overlay_tests {
-    use super::{Card, Destination, FlightView, Flights};
+    use super::{Card, Destination, Flights};
     use gpui_kit::{canvas, div, px, size, AppContext as _, Bounds, Context, IntoElement, ParentElement as _, Render, Styled as _, TestAppContext, Window};
     use std::{cell::Cell, rc::Rc, time::{Duration, Instant}};
 
@@ -455,8 +456,7 @@ mod native_overlay_tests {
         let started = Rc::new(Cell::new(None));
         window.update(cx, |host, _, cx| {
             let card = Card { to: Destination::Archive, rect: Bounds::new(gpui_kit::point(px(0.), px(0.)), size(px(40.), px(30.))), path: None, started: started.clone(), seed: 1 };
-            host.flight.view = Some(cx.new(|_| FlightView { cards: vec![card] }));
-            cx.notify();
+            host.flight.push_card(card, cx);
         }).unwrap();
         cx.run_until_parked();
         assert!(overlay.get(), "a newly mounted flight covers native arcs on its first frame");
@@ -464,5 +464,11 @@ mod native_overlay_tests {
         window.update(cx, |_, _, cx| cx.notify()).unwrap();
         cx.run_until_parked();
         assert!(!overlay.get(), "native arcs can resume when the flight has finished");
+        window.update(cx, |host, _, cx| {
+            let card = Card { to: Destination::Archive, rect: Bounds::new(gpui_kit::point(px(0.), px(0.)), size(px(40.), px(30.))), path: None, started: Rc::new(Cell::new(None)), seed: 2 };
+            host.flight.push_card(card, cx);
+        }).unwrap();
+        cx.run_until_parked();
+        assert!(overlay.get(), "a reused, unmounted flight view must notify its parent at launch");
     }
 }

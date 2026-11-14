@@ -15,8 +15,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { GpuiDriver } from '../support/gpui.ts';
 import { SwiftDriver } from '../support/swift.ts';
 import { ensurePerfLock } from './perf-lock.ts';
-import { recording } from './real-screen.ts';
+import { recording, executableProcesses } from './real-screen.ts';
 import { nativeArc, assertArcProgress } from './arc-progress.ts';
+import { cpuTimeSeconds, windowServerPid } from './cpu-time.ts';
 
 await ensurePerfLock();
 const onlyLoading = process.env.TB_IDLE_ONLY === 'loading';
@@ -34,6 +35,11 @@ if (offscreen) {
 const seconds = Number(process.env.TB_IDLE_SECONDS ?? 8);
 if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('TB_IDLE_SECONDS must be positive.');
 if (process.platform !== 'darwin') throw new Error('This measurement uses macOS process counters.');
+const serverPid = windowServerPid(executableProcesses());
+function serverCpu() {
+  const raw = execFileSync('/bin/ps', ['-p', String(serverPid), '-o', 'time='], {encoding: 'utf8'}).trim();
+  return {seconds: cpuTimeSeconds(raw), at: performance.now(), raw};
+}
 const abort = new AbortController();
 const sleep = (ms: number) => delay(ms, undefined, { signal: abort.signal });
 
@@ -185,6 +191,7 @@ async function measure(label: string) {
   // The separate watcher only reads window-server/Workspace state.
   const finishWatch = await watchWindow();
   let before: Counters, after: Counters, elapsed: number, frames, windowChecks;
+  let serverBefore: ReturnType<typeof serverCpu>, serverAfter: ReturnType<typeof serverCpu>;
   let windowActiveBefore: boolean | null = null;
   let nativeArcProof: {before?: unknown; after?: unknown} | null = null;
   try {
@@ -200,15 +207,19 @@ async function measure(label: string) {
       if (initial.windowActive === false || (process.env.TB_IDLE_REQUIRE_ACTIVE === 'on' && initial.windowActive !== true)) throw new Error('GPUI window is not active or this binary cannot report its active state.');
       windowActiveBefore = initial.windowActive ?? null;
     }
+    serverBefore = serverCpu();
     before = read();
     const at = performance.now();
     await sleep(seconds * 1000);
     elapsed = (performance.now() - at) / 1000;
     after = read();
+    serverAfter = serverCpu();
+    if (serverAfter.seconds < serverBefore.seconds) throw new Error('WindowServer CPU counter moved backwards.');
     frames = swift ? null : JSON.parse(await app.do({ cmd: 'frame-stats', reset: true }));
     if (!swift && (frames.windowActive === false || (process.env.TB_IDLE_REQUIRE_ACTIVE === 'on' && frames.windowActive !== true))) throw new Error('GPUI window lost its active state during the interval.');
     if (nativeArcProof) {
       const start = nativeArc(frames.workingArcs);
+      if (start.fallbackPaints !== 0) throw new Error('Working arcs fell back to raster drawing during the CPU interval.');
       await sleep(start.periodSeconds * 250);
       const end = JSON.parse(await app.do({cmd: 'frame-stats', reset: false})).workingArcs;
       assertArcProgress(start, end);
@@ -256,6 +267,8 @@ async function measure(label: string) {
     contextSwitchesPerSecond: (after.contextSwitches - before.contextSwitches) / elapsed,
     commandMs: swift ? null : { p50: times[19], p95: times[37], max: times[39] }, load: os.loadavg(), frames, windowChecks,
     loaderGateEnforced: requireLoaderPhase && label === loadingLabel, nativeArcProof,
+    windowServer: {pid: serverPid, cpuPercent: (serverAfter.seconds - serverBefore.seconds) / ((serverAfter.at - serverBefore.at) / 1000) * 100,
+      seconds: (serverAfter.at - serverBefore.at) / 1000, before: serverBefore.raw, after: serverAfter.raw, scope: 'shared process; includes other apps'},
     windowActiveBefore, windowActiveAfter: frames?.windowActive ?? null, swiftActivation,
     priority: execFileSync('ps', ['-p', String(appPid), '-o', 'pri=,nice='], { encoding: 'utf8' }).trim() }));
   // Capture only after the counters and responsiveness probes are complete.

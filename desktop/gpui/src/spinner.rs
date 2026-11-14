@@ -135,6 +135,8 @@ fn arc_phase() -> f64 {
 }
 
 thread_local! {
+    #[cfg(feature = "frame-stats")]
+    static RUST_ARC_PAINTS: RefCell<HashMap<WindowId, u64>> = RefCell::new(HashMap::new());
     static RASTER_CAPTURE: Cell<bool> = const { Cell::new(false) };
     /// The views with a frame on its way for their arcs.
     static TICKING: RefCell<HashSet<EntityId>> = RefCell::new(HashSet::new());
@@ -207,12 +209,21 @@ pub(crate) struct ArcLayer {
 }
 
 impl ArcLayer {
-    #[cfg(feature = "automation")]
-    pub(crate) fn native_report(&self, window: &Window) -> serde_json::Value {
+    #[cfg(all(feature = "automation", feature = "frame-stats"))]
+    pub(crate) fn native_report(&self, window: &Window, reset: bool) -> serde_json::Value {
         #[cfg(target_os = "macos")]
-        { self.native.borrow().report(window.window_handle().window_id()) }
+        let mut report = self.native.borrow().report(window.window_handle().window_id());
         #[cfg(not(target_os = "macos"))]
-        { let _ = window; serde_json::json!({"requested": false, "backend": "rust"}) }
+        let mut report = serde_json::json!({"requested": false, "backend": "rust"});
+        let paints = RUST_ARC_PAINTS.with(|paints| {
+            let mut paints = paints.borrow_mut();
+            let entry = paints.entry(window.window_handle().window_id()).or_default();
+            let count = *entry;
+            if reset { *entry = 0; }
+            count
+        });
+        report["fallbackPaints"] = serde_json::json!(paints);
+        report
     }
     #[cfg(all(target_os = "macos", feature = "automation"))]
     pub(crate) fn block_native(&mut self, blocked: bool) { self.native_blocked = blocked; }
@@ -252,6 +263,8 @@ impl Render for ArcLayer {
                 LAYERED.with(|l| l.borrow_mut().remove(&id));
                 PLACED.with(|p| p.borrow_mut().remove(&id));
                 DRAWN.with(|d| d.borrow_mut().retain(|(window, _), _| *window != id));
+                #[cfg(feature = "frame-stats")]
+                RUST_ARC_PAINTS.with(|p| p.borrow_mut().remove(&id));
             }));
         }
         let _ = cx;
@@ -324,6 +337,12 @@ fn paint_layer(draw: bool, window: &mut Window, cx: &mut App,
     } else { false };
     #[cfg(not(all(target_os = "macos", feature = "automation")))]
     let native = false;
+    #[cfg(feature = "frame-stats")]
+    RUST_ARC_PAINTS.with(|paints| {
+        let mut paints = paints.borrow_mut();
+        paints.retain(|id, _| open.contains(id));
+        if !native && !arcs.is_empty() { *paints.entry(id).or_default() += 1; }
+    });
     for arc in arcs.iter().filter(|_| draw && !native) {
         let shown = foot_shown(f32::from(arc.mask.bounds.bottom()), f32::from(arc.bounds.center().y));
         let color = arc.color.opacity(shown);
@@ -387,7 +406,8 @@ mod arc_probe {
             let blocked: Vec<_> = names.into_iter().enumerate().filter_map(|(i, name)| (flags & (1 << i) != 0).then_some(name)).collect();
             serde_json::json!({"requested": enabled(), "backend": if health.visible > 0 { "core-animation" } else { "rust" },
                 "blockedBy": blocked, "placed": health.placed, "visible": health.visible, "animating": health.animating,
-                "presented": health.presented, "phase": health.phase, "periodSeconds": health.period, "snapshotSeconds": health.time})
+                "presented": health.presented, "phase": health.phase, "periodSeconds": health.period,
+                "expectedPeriodSeconds": TURN_SECONDS, "snapshotSeconds": health.time})
         }
         pub(super) fn paint(&mut self, arcs: &[Placed], flags: u32, open: &HashSet<WindowId>, window: &Window) -> bool {
             if !enabled() { return false; }
