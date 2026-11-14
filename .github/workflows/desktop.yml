@@ -97,13 +97,15 @@ jobs:
           cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui spinner:: -- --list > loader-tests.txt
           cat loader-tests.txt
           count=$(awk '/^spinner::.*: test$/ { n++ } END { print n+0 }' loader-tests.txt)
-          test "$count" -ge 10
+          test "$count" -ge 15
           cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui spinner::
-          cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui frame_stats::loader_probe_tests:: -- --list > loader-probe-tests.txt
-          cat loader-probe-tests.txt
-          count=$(awk '/^frame_stats::loader_probe_tests::.*: test$/ { n++ } END { print n+0 }' loader-probe-tests.txt)
+          cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui frame_stats:: -- --list > frame-stats-tests.txt
+          cat frame-stats-tests.txt
+          count=$(awk '/^frame_stats::loader_probe_tests::.*: test$/ { n++ } END { print n+0 }' frame-stats-tests.txt)
           test "$count" -ge 1
-          cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui frame_stats::loader_probe_tests::
+          count=$(awk '/^frame_stats::handoff_probe_tests::.*: test$/ { n++ } END { print n+0 }' frame-stats-tests.txt)
+          test "$count" -ge 5
+          cargo test --locked --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation,frame-stats --bin threadbear-gpui frame_stats::
       - name: Behaviour specs
         run: |
           cargo build --manifest-path desktop/Cargo.toml -p threadbear-gpui --features automation

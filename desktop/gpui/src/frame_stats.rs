@@ -20,12 +20,18 @@ use std::time::{Duration, Instant};
 const IDLE_FPS: f64 = 4.;
 const SAMPLE_EVERY: Duration = Duration::from_millis(500);
 
+#[cfg(feature = "automation")]
+struct Baseline {
+    window: WindowId,
+    frames: FrameDurationSnapshot,
+    cpu: u64,
+}
+
+#[cfg(feature = "automation")]
 thread_local! {
     /// What `frame-stats` with `reset` saw, so the next report is just what
     /// happened since (the perf tool resets before it starts scrolling).
-    static BASELINE: RefCell<Option<FrameDurationSnapshot>> = const { RefCell::new(None) };
-    /// The main thread's CPU time at that `reset`, in nanoseconds.
-    static CPU_BASELINE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static BASELINE: RefCell<Option<Baseline>> = const { RefCell::new(None) };
 }
 
 // Scripted perf builds count only the marked transcript loader: another
@@ -133,23 +139,25 @@ fn ms(nanos: u64) -> f64 {
 #[cfg(feature = "automation")]
 fn dirty_to_present_ms(now: &FrameDurationSnapshot, before: Option<&FrameDurationSnapshot>) -> Value {
     // workMs stops before platform submission. This existing histogram runs
-    // through submission, including time blocked acquiring a Metal drawable.
-    // It measures invalidation to handoff, not the pixels reaching the display.
+    // through submission. It includes waiting for the frame signal, drawing,
+    // and submission (including a blocked Metal drawable acquisition).
+    // It is not pure submission time or the pixels reaching the display.
     let mut durations = now.dirty_to_present_histogram.clone();
     if before.is_some_and(|before| durations.subtract(&before.dirty_to_present_histogram).is_err()) {
         return json!({ "error": "handoff baseline does not belong to this frame history" });
     }
-    json!({ "samples": durations.len(),
-        "p50": ms(durations.value_at_quantile(0.5)),
-        "p90": ms(durations.value_at_quantile(0.9)),
-        "p99": ms(durations.value_at_quantile(0.99)),
-        "max": ms(durations.max()) })
+    let samples = durations.len();
+    json!({ "samples": samples,
+        "p50": (samples > 0).then(|| ms(durations.value_at_quantile(0.5))),
+        "p90": (samples > 0).then(|| ms(durations.value_at_quantile(0.9))),
+        "p99": (samples > 0).then(|| ms(durations.value_at_quantile(0.99))),
+        "max": (samples > 0).then(|| ms(durations.max())) })
 }
 
 #[cfg(all(test, feature = "automation"))]
 mod handoff_probe_tests {
-    use super::dirty_to_present_ms;
-    use gpui_kit::{WindowId, WindowProfiler};
+    use super::{dirty_to_present_ms, report, BASELINE};
+    use gpui_kit::{div, size, Context, IntoElement, Render, TestAppContext, Window, WindowId, WindowProfiler};
 
     #[test]
     fn handoff_duration_excludes_samples_before_the_reset() {
@@ -165,11 +173,52 @@ mod handoff_probe_tests {
     }
 
     #[test]
-    fn a_stale_handoff_baseline_is_reported_instead_of_mixed_with_new_frames() {
+    fn an_out_of_range_handoff_baseline_is_reported_as_an_error() {
         let now = WindowProfiler::new(WindowId::from(2u64)).unwrap().frame_duration_snapshot();
         let mut before = now.clone();
         before.dirty_to_present_histogram.record(100_000_000).unwrap();
         assert!(dirty_to_present_ms(&now, Some(&before))["error"].is_string());
+    }
+
+    #[test]
+    fn a_negative_handoff_bucket_is_reported_as_an_error() {
+        let mut now = WindowProfiler::new(WindowId::from(3u64)).unwrap().frame_duration_snapshot();
+        now.dirty_to_present_histogram.record(9_000_000).unwrap();
+        let mut before = now.clone();
+        before.dirty_to_present_histogram.record(9_000_000).unwrap();
+        // The baseline fits the range, but subtracting its bucket would be negative.
+        now.dirty_to_present_histogram.record(100_000_000).unwrap();
+        assert!(dirty_to_present_ms(&now, Some(&before))["error"].is_string());
+    }
+
+    #[test]
+    fn no_handoff_samples_are_not_reported_as_zero_latency() {
+        let now = WindowProfiler::new(WindowId::from(4u64)).unwrap().frame_duration_snapshot();
+        let report = dirty_to_present_ms(&now, None);
+        assert_eq!(report["samples"], 0);
+        for field in ["p50", "p90", "p99", "max"] { assert!(report[field].is_null(), "{field}"); }
+    }
+
+    struct Blank;
+    impl Render for Blank {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement { div() }
+    }
+
+    #[gpui_kit::test]
+    fn a_reset_on_another_window_is_rejected_even_when_histograms_are_compatible(cx: &mut TestAppContext) {
+        let a = cx.open_window(size(gpui_kit::px(20.), gpui_kit::px(20.)), |_, _| Blank);
+        let b = cx.open_window(size(gpui_kit::px(20.), gpui_kit::px(20.)), |_, _| Blank);
+        cx.run_until_parked();
+        a.update(cx, |_, window, _| { report(window, true); }).unwrap();
+        let b_frames = b.update(cx, |_, window, _| window.frame_duration_snapshot()).unwrap();
+        // Make the counts fully compatible: subtraction alone cannot identify a window.
+        BASELINE.with(|baseline| baseline.borrow_mut().as_mut().unwrap().frames = b_frames);
+        let refused = b.update(cx, |_, window, _| report(window, false)).unwrap();
+        assert!(refused["error"].is_string(), "a report must not subtract another window's reset");
+        assert!(a.update(cx, |_, window, _| report(window, false)).unwrap()["error"].is_null());
+        b.update(cx, |_, window, _| { report(window, true); }).unwrap();
+        assert!(b.update(cx, |_, window, _| report(window, false)).unwrap()["error"].is_null());
+        assert!(a.update(cx, |_, window, _| report(window, false)).unwrap()["error"].is_string());
     }
 }
 
@@ -204,10 +253,15 @@ fn since(now: &FrameDurationSnapshot, before: Option<&FrameDurationSnapshot>) ->
 /// their work took, since the last `reset` (or since it opened).
 #[cfg(feature = "automation")]
 pub(crate) fn report(window: &Window, reset: bool) -> Value {
+    let id = window.window_handle().window_id();
+    if !reset && BASELINE.with(|b| b.borrow().as_ref().is_some_and(|b| b.window != id)) {
+        return json!({ "error": "frame-stats was reset on another window; reset this window before sampling" });
+    }
     let now = window.frame_duration_snapshot();
     let out = BASELINE.with(|b| {
         let b = b.borrow();
-        let screens: Vec<Value> = since(&now, b.as_ref())
+        let before = b.as_ref().filter(|b| b.window == id).map(|b| &b.frames);
+        let screens: Vec<Value> = since(&now, before)
             .iter()
             .map(|(f, c)| {
                 let w = &f.work;
@@ -223,16 +277,16 @@ pub(crate) fn report(window: &Window, reset: bool) -> Value {
                 })
             })
             .collect();
-        json!({ "screens": screens, "dirtyToPresentMs": dirty_to_present_ms(&now, b.as_ref()) })
+        json!({ "screens": screens, "dirtyToPresentMs": dirty_to_present_ms(&now, before) })
     });
     let cpu = thread_cpu_nanos();
     let mut out = out;
     out["windowActive"] = json!(window.is_window_active());
     out["loader"] = loader_sample(window, reset);
-    out["mainCpuMs"] = json!(ms(cpu.saturating_sub(CPU_BASELINE.with(|c| c.get()))));
+    let cpu_before = BASELINE.with(|b| b.borrow().as_ref().filter(|b| b.window == id).map_or(0, |b| b.cpu));
+    out["mainCpuMs"] = json!(ms(cpu.saturating_sub(cpu_before)));
     if reset {
-        BASELINE.with(|b| *b.borrow_mut() = Some(now));
-        CPU_BASELINE.with(|c| c.set(cpu));
+        BASELINE.with(|b| *b.borrow_mut() = Some(Baseline { window: id, frames: now, cpu }));
     }
     out
 }
