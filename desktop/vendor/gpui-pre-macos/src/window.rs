@@ -2156,26 +2156,38 @@ impl PlatformWindow for MacWindow {
     }
 
     fn draw_with_updates(&self, scene: &gpui::Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
-        // Pair native sublayers with the replacement drawable in one commit.
-        // The renderer's existing transaction path waits for command scheduling
-        // before presenting. Failed drawable/render attempts leave both alone.
+        // Use the same detached, synchronous renderer path as display_layer.
+        // A display-link drawable has its own target presentation time and must
+        // not race an earlier asynchronous frame against these native changes.
+        struct Restore<'a> {
+            window: &'a Rc<Mutex<MacWindowState>>,
+            previous: bool,
+            restart: bool,
+        }
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) {
+                let mut state = self.window.lock();
+                state.set_presents_with_transaction(self.previous);
+                if self.restart { state.start_display_link(self.window); }
+            }
+        }
+        let (previous, restart) = {
+            let mut state = self.0.lock();
+            let previous = state.presents_with_transaction;
+            let restart = matches!(&state.frame_source, FrameSource::Metal(frames) if frames.is_attached());
+            if restart { state.stop_display_link(); }
+            state.set_presents_with_transaction(true);
+            (previous, restart)
+        };
+        // Commit before restoring the layer property or restarting its link.
+        let _restore = Restore { window: &self.0, previous, restart };
         struct Transaction;
         impl Drop for Transaction {
             fn drop(&mut self) { unsafe { let (): () = msg_send![class!(CATransaction), commit]; } }
         }
         unsafe { let (): () = msg_send![class!(CATransaction), begin]; }
         let _transaction = Transaction;
-        let presented = {
-            struct Restore<'a> { state: &'a mut MacWindowState, previous: bool }
-            impl Drop for Restore<'_> {
-                fn drop(&mut self) { self.state.set_presents_with_transaction(self.previous); }
-            }
-            let mut state = self.0.lock();
-            let previous = state.presents_with_transaction;
-            state.set_presents_with_transaction(true);
-            let restore = Restore { state: &mut state, previous };
-            restore.state.renderer.draw_if_ready(scene)
-        };
+        let presented = self.0.lock().renderer.draw_if_ready(scene);
         // Layer operations may call back into MacWindowState. Release its mutex
         // before applying client changes or committing the outer transaction.
         if presented {

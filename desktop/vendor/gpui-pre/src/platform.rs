@@ -1329,10 +1329,10 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn draw(&self, scene: &Scene);
     /// Applies native layer changes with the scene that replaces them.
     fn draw_with_updates(&self, scene: &Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
+        self.draw(scene);
         for update in updates.drain(..) {
             update();
         }
-        self.draw(scene);
         true
     }
     fn schedule_frame(&self) {}

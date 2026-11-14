@@ -399,7 +399,6 @@ mod arc_probe {
         id: WindowId,
         specs: Vec<Spec>,
         scale: f32,
-        phase: f64,
         flags: u32,
     }
 
@@ -457,13 +456,13 @@ mod arc_probe {
                 self.gates.insert(id, flags);
                 return (draw, None);
             }
-            (draw, Some(Update { id, specs, scale, phase: arc_phase(), flags }))
+            (draw, Some(Update { id, specs, scale, flags }))
         }
 
         pub(super) fn apply(&mut self, update: Update) {
             // Closing the window may have removed the host after this draw.
             let Some(host) = self.hosts.get(&update.id) else { return; };
-            unsafe { tb_arc_probe_set(host.0, update.specs.as_ptr(), update.specs.len(), update.phase, TURN_SECONDS); }
+            unsafe { tb_arc_probe_set(host.0, update.specs.as_ptr(), update.specs.len(), arc_phase(), TURN_SECONDS); }
             self.gates.insert(update.id, update.flags);
             self.committed.insert(update.id, (update.specs, update.scale));
         }
@@ -730,6 +729,49 @@ mod spinner_tests {
             assert_eq!(*applied.borrow(), vec![3], "only the replacement scene's changes may commit");
             window.present_if_needed();
             assert_eq!(*applied.borrow(), vec![3], "present callbacks are consumed exactly once");
+        }).unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn failed_native_presentations_retry_without_replaying_stale_updates(cx: &mut TestAppContext) {
+        let handle = cx.open_window(size(px(100.), px(100.)), |_, _| SpinnerHost { arc: false, visible: false, clipped: false });
+        let applied = Rc::new(std::cell::RefCell::new(Vec::new()));
+        cx.run_until_parked();
+        cx.update_window(handle.into(), |_, window, cx| {
+            let queue = |window: &mut Window, generation| {
+                let applied = applied.clone();
+                window.defer_until_present(move || applied.borrow_mut().push(generation));
+            };
+            window.draw(cx).clear(cx);
+            queue(window, 1);
+            window.simulate_failed_presentations(1);
+            assert_eq!(window.simulate_presentation(false), (true, 1));
+            assert!(applied.borrow().is_empty());
+            assert_eq!(window.simulate_presentation(false), (false, 0));
+            assert_eq!(*applied.borrow(), vec![1]);
+            window.simulate_presentation(true);
+            assert_eq!(*applied.borrow(), vec![1], "a forced second present cannot replay the update");
+
+            window.draw(cx).clear(cx);
+            queue(window, 2);
+            window.simulate_failed_presentations(1);
+            assert_eq!(window.simulate_presentation(false), (true, 1));
+            window.draw(cx).clear(cx);
+            queue(window, 3);
+            assert_eq!(window.simulate_presentation(false), (false, 0));
+            assert_eq!(*applied.borrow(), vec![1, 3], "a new draw replaces failed scene updates");
+
+            window.draw(cx).clear(cx);
+            queue(window, 4);
+            window.simulate_failed_presentations(10);
+            for _ in 0..2 { assert_eq!(window.simulate_presentation(false), (true, 1)); }
+            for _ in 0..8 { assert_eq!(window.simulate_presentation(false), (false, 1)); }
+            assert_eq!(*applied.borrow(), vec![1, 3], "permanent failure stops retries without changing native layers");
+            window.draw(cx).clear(cx);
+            queue(window, 5);
+            window.simulate_failed_presentations(0);
+            assert_eq!(window.simulate_presentation(false), (false, 0));
+            assert_eq!(*applied.borrow(), vec![1, 3, 5], "a new draw recovers after failure");
         }).unwrap();
     }
 

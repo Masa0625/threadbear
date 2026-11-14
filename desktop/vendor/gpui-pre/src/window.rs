@@ -1275,6 +1275,7 @@ pub struct Window {
     hovered: Rc<Cell<bool>>,
     pub(crate) needs_present: Rc<Cell<bool>>,
     present_updates: Vec<Box<dyn FnOnce()>>,
+    present_failures: u8,
     /// Tracks recent input event timestamps to determine if input is arriving at a high rate.
     /// Used to selectively enable VRR optimization only when input rate exceeds 60fps.
     pub(crate) input_rate_tracker: Rc<RefCell<InputRateTracker>>,
@@ -2398,6 +2399,7 @@ impl Window {
             hovered,
             needs_present,
             present_updates: Vec::new(),
+            present_failures: 0,
             input_rate_tracker,
             #[cfg(feature = "profiler")]
             window_profiler: profiler::WindowProfiler::new(handle.window_id())?,
@@ -3653,6 +3655,7 @@ impl Window {
         // A draw can be superseded without ever reaching the screen (including
         // offscreen screenshots). Its native changes must not escape separately.
         self.present_updates.clear();
+        self.present_failures = 0;
         // Drain every draw in profiler builds so a previous frame's
         // first-invalidation timestamp can't be attributed to this one.
         #[cfg(feature = "profiler")]
@@ -3858,8 +3861,13 @@ impl Window {
             self.active.get(),
             !self.next_frame_callbacks.borrow().is_empty(),
         );
-        self.needs_present.set(!presented);
-        if !presented { self.platform_window.schedule_frame(); }
+        self.present_failures = if presented { 0 } else { self.present_failures.saturating_add(1) };
+        // A missing drawable usually recovers on the next frame. A persistent
+        // GPU error must not turn an idle window into a full-rate retry loop.
+        // Keep unapplied changes until a new draw replaces them or a later
+        // explicit presentation request retries the same scene.
+        self.needs_present.set(!presented && self.present_failures < 3);
+        if self.needs_present.get() { self.platform_window.schedule_frame(); }
         profiling::finish_frame!();
     }
 
@@ -3869,6 +3877,21 @@ impl Window {
         if self.needs_present.get() {
             self.present();
         }
+    }
+
+    /// Makes the test platform reject the next `count` native-update presents.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn simulate_failed_presentations(&mut self, count: usize) {
+        self.platform_window.as_test().expect("test platform window").0.lock().presentations_to_fail = count;
+    }
+
+    /// Simulates a platform presentation request; returns remaining presentation
+    /// demand and native-update count. `force` bypasses the demand check, as a
+    /// platform request with `require_presentation` does.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn simulate_presentation(&mut self, force: bool) -> (bool, usize) {
+        if force || self.needs_present.get() { self.present(); }
+        (self.needs_present.get(), self.present_updates.len())
     }
 
     /// Returns a snapshot of the current input-latency histograms.
