@@ -106,8 +106,7 @@ impl RenderOnce for TurningArc {
 }
 
 fn paint_arc(bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
-    static START: OnceLock<Instant> = OnceLock::new();
-    let turned = (START.get_or_init(Instant::now).elapsed().as_secs_f32() / TURN_SECONDS).fract();
+    let turned = arc_phase();
     // The ring as Swift's: 1.6 wide, 3 in from the sides, zoomed like an
     // icon's strokes.
     let width = style::zoomed(1.6);
@@ -130,6 +129,11 @@ fn paint_arc(bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
         let dot = Bounds { origin: point(c.x - gpui_kit::px(width / 2.), c.y - gpui_kit::px(width / 2.)), size: size(gpui_kit::px(width), gpui_kit::px(width)) };
         window.paint_quad(fill(dot, color).corner_radii(gpui_kit::px(width / 2.)));
     }
+}
+
+fn arc_phase() -> f32 {
+    static START: OnceLock<Instant> = OnceLock::new();
+    (START.get_or_init(Instant::now).elapsed().as_secs_f32() / TURN_SECONDS).fract()
 }
 
 thread_local! {
@@ -249,7 +253,13 @@ fn paint_layer(draw: bool, window: &mut Window, cx: &mut App) {
     // What's kept of views that drew no arcs, or not lately, goes.
     let placed: HashSet<(WindowId, EntityId)> = PLACED.with(|p| p.borrow().iter().flat_map(|(w, arcs)| arcs.iter().map(move |a| (*w, a.view))).collect());
     DRAWN.with(|d| d.borrow_mut().retain(|key, drew| *drew == frame || placed.contains(key)));
-    for arc in arcs.iter().filter(|_| draw) {
+    // This native-overlay experiment is available only in scripted builds.
+    // It intentionally has no production path until overlay ordering is proved.
+    #[cfg(all(target_os = "macos", feature = "automation"))]
+    let native = arc_probe::paint(&arcs, draw, &open, window);
+    #[cfg(not(all(target_os = "macos", feature = "automation")))]
+    let native = false;
+    for arc in arcs.iter().filter(|_| draw && !native) {
         let shown = foot_shown(f32::from(arc.mask.bounds.bottom()), f32::from(arc.bounds.center().y));
         let color = arc.color.opacity(shown);
         window.with_content_mask(Some(arc.mask.clone()), |window| paint_arc(arc.bounds, color, window));
@@ -257,8 +267,62 @@ fn paint_layer(draw: bool, window: &mut Window, cx: &mut App) {
     FRAMES.set(frame + 1);
     // The next turn: this layer's view draws again (and the root with it),
     // not the sidebar.
-    if !arcs.is_empty() {
+    if !arcs.is_empty() && !native {
         next_frame(window, cx);
+    }
+}
+
+#[cfg(all(target_os = "macos", feature = "automation"))]
+mod arc_probe {
+    use super::*;
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct Spec {
+        x: f32, y: f32, side: f32, radius: f32, width: f32,
+        clip_x: f32, clip_y: f32, clip_w: f32, clip_h: f32,
+        r: f32, g: f32, b: f32, a: f32,
+    }
+    unsafe extern "C" {
+        fn tb_arc_probe_create(parent: *mut c_void) -> *mut c_void;
+        fn tb_arc_probe_set(host: *mut c_void, specs: *const Spec, count: usize, phase: f64);
+        fn tb_arc_probe_drop(host: *mut c_void);
+    }
+    struct Host(*mut c_void);
+    impl Drop for Host {
+        fn drop(&mut self) { unsafe { tb_arc_probe_drop(self.0); } }
+    }
+    thread_local! {
+        static HOSTS: RefCell<HashMap<WindowId, Host>> = RefCell::new(HashMap::new());
+    }
+
+    pub(super) fn paint(arcs: &[Placed], draw: bool, open: &HashSet<WindowId>, window: &Window) -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        if !*ENABLED.get_or_init(|| std::env::var("TB_PERF_NATIVE_ARCS").as_deref() == Ok("on")) { return false; }
+        let id = window.window_handle().window_id();
+        HOSTS.with(|hosts| {
+            let mut hosts = hosts.borrow_mut();
+            hosts.retain(|key, _| open.contains(key));
+            if !hosts.contains_key(&id) {
+                let Some(parent) = crate::web_panels::native_view(window) else { return false; };
+                let raw = unsafe { tb_arc_probe_create(parent) };
+                if raw.is_null() { return false; }
+                hosts.insert(id, Host(raw));
+            }
+            let specs: Vec<Spec> = arcs.iter().filter(|_| draw).map(|arc| {
+                let side = f32::from(arc.bounds.size.width).min(f32::from(arc.bounds.size.height));
+                let color: Rgba = arc.color.opacity(foot_shown(f32::from(arc.mask.bounds.bottom()), f32::from(arc.bounds.center().y))).into();
+                Spec {
+                    x: arc.bounds.origin.x.into(), y: arc.bounds.origin.y.into(), side,
+                    radius: ((side - style::zoomed(3.)) / 2.).max(1.), width: style::zoomed(1.6),
+                    clip_x: arc.mask.bounds.origin.x.into(), clip_y: arc.mask.bounds.origin.y.into(),
+                    clip_w: arc.mask.bounds.size.width.into(), clip_h: arc.mask.bounds.size.height.into(),
+                    r: color.r, g: color.g, b: color.b, a: color.a,
+                }
+            }).collect();
+            unsafe { tb_arc_probe_set(hosts[&id].0, specs.as_ptr(), specs.len(), arc_phase() as f64); }
+            true
+        })
     }
 }
 

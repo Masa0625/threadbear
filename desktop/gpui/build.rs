@@ -21,6 +21,11 @@ fn main() {
         }
     }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        if std::env::var_os("CARGO_FEATURE_AUTOMATION").is_some() {
+            println!("cargo:rerun-if-changed=native/arc_probe.m");
+            cc::Build::new().file("native/arc_probe.m").flag("-fobjc-arc").compile("threadbear_arc_probe");
+            println!("cargo:rustc-link-lib=framework=QuartzCore");
+        }
         // The older asset-loading calls work on every macOS this runs on;
         // their deprecation warnings aren't worth an availability split.
         cc::Build::new().file("native/media_views.m").flag("-fobjc-arc").flag("-Wno-deprecated-declarations").compile("threadbear_media_views");
