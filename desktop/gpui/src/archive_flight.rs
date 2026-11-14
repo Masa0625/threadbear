@@ -167,6 +167,7 @@ impl Flights {
 
     /// The flights, over the whole window. Drawn by the shell.
     pub(crate) fn overlay(&mut self, cx: &mut App) -> AnyElement {
+        if !self.is_drawing(cx) { return div().into_any_element(); }
         let view = self.view.get_or_insert_with(|| cx.new(|_| FlightView::default())).clone();
         deferred(div().absolute().top_0().left_0().size_full().child(view)).with_priority(1).into_any_element()
     }
@@ -262,6 +263,9 @@ impl Threadbear {
             cx.notify();
         });
         self.flight.flying.insert(id.to_owned(), to);
+        // The empty flight view is not mounted. Notify its parent once so
+        // the first card is mounted; later turns notify only the flight view.
+        cx.notify();
         let id = id.to_owned();
         let launched = Instant::now();
         cx.spawn(async move |this, cx| {
@@ -423,4 +427,42 @@ fn transcript_shape(card: &Card, scale: f32, line: Hsla, bubble: Hsla) -> impl I
         used += 26.;
     }
     col
+}
+
+#[cfg(all(test, feature = "automation"))]
+mod native_overlay_tests {
+    use super::{Card, Destination, FlightView, Flights};
+    use gpui_kit::{canvas, div, px, size, AppContext as _, Bounds, Context, IntoElement, ParentElement as _, Render, Styled as _, TestAppContext, Window};
+    use std::{cell::Cell, rc::Rc, time::{Duration, Instant}};
+
+    struct Host { flight: Flights, overlay: Rc<Cell<bool>> }
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let overlay = self.overlay.clone();
+            div().size_full()
+                .child(canvas(|_, _, _| {}, move |_, _, window, _| overlay.set(window.has_deferred_draws())).size_full())
+                .child(self.flight.overlay(cx))
+        }
+    }
+
+    #[gpui_kit::test]
+    fn only_a_live_flight_defers_content_above_the_native_arcs(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(gpui_kit::component::Theme::default()));
+        let overlay = Rc::new(Cell::new(true));
+        let window = cx.open_window(size(px(100.), px(100.)), |_, _| Host { flight: Flights::default(), overlay: overlay.clone() });
+        cx.run_until_parked();
+        assert!(!overlay.get(), "an empty flight must not disable native animation");
+        let started = Rc::new(Cell::new(None));
+        window.update(cx, |host, _, cx| {
+            let card = Card { to: Destination::Archive, rect: Bounds::new(gpui_kit::point(px(0.), px(0.)), size(px(40.), px(30.))), path: None, started: started.clone(), seed: 1 };
+            host.flight.view = Some(cx.new(|_| FlightView { cards: vec![card] }));
+            cx.notify();
+        }).unwrap();
+        cx.run_until_parked();
+        assert!(overlay.get(), "a newly mounted flight covers native arcs on its first frame");
+        started.set(Some(Instant::now() - Duration::from_secs(60)));
+        window.update(cx, |_, _, cx| cx.notify()).unwrap();
+        cx.run_until_parked();
+        assert!(!overlay.get(), "native arcs can resume when the flight has finished");
+    }
 }

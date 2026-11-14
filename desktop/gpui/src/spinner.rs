@@ -38,7 +38,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-const TURN_SECONDS: f32 = 0.9;
+const TURN_SECONDS: f64 = 0.9;
 const FRAME: Duration = Duration::from_millis(20);
 
 #[cfg(test)]
@@ -104,7 +104,7 @@ impl RenderOnce for TurningArc {
 }
 
 fn paint_arc(bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
-    let turned = arc_phase();
+    let turned = arc_phase() as f32;
     // The ring as Swift's: 1.6 wide, 3 in from the sides, zoomed like an
     // icon's strokes.
     let width = style::zoomed(1.6);
@@ -129,9 +129,9 @@ fn paint_arc(bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
     }
 }
 
-fn arc_phase() -> f32 {
+fn arc_phase() -> f64 {
     static START: OnceLock<Instant> = OnceLock::new();
-    (START.get_or_init(Instant::now).elapsed().as_secs_f32() / TURN_SECONDS).fract()
+    (START.get_or_init(Instant::now).elapsed().as_secs_f64() / TURN_SECONDS).fract()
 }
 
 thread_local! {
@@ -207,6 +207,13 @@ pub(crate) struct ArcLayer {
 }
 
 impl ArcLayer {
+    #[cfg(feature = "automation")]
+    pub(crate) fn native_report(&self, window: &Window) -> serde_json::Value {
+        #[cfg(target_os = "macos")]
+        { self.native.borrow().report(window.window_handle().window_id()) }
+        #[cfg(not(target_os = "macos"))]
+        { let _ = window; serde_json::json!({"requested": false, "backend": "rust"}) }
+    }
     #[cfg(all(target_os = "macos", feature = "automation"))]
     pub(crate) fn block_native(&mut self, blocked: bool) { self.native_blocked = blocked; }
     pub(crate) fn new(dock: Entity<threadbear_dock::DockModel>, dock_view: Entity<threadbear_dock::DockView>, panel: &'static str) -> Self {
@@ -308,13 +315,13 @@ fn paint_layer(draw: bool, window: &mut Window, cx: &mut App,
     // This native-overlay experiment is available only in scripted builds.
     // It intentionally has no production path until overlay ordering is proved.
     #[cfg(all(target_os = "macos", feature = "automation"))]
-    let native = {
+    let native = if arc_probe::enabled() {
         use gpui_kit::component::WindowExt as _;
-        let allowed = draw && !blocked && !RASTER_CAPTURE.get()
-            && !window.has_deferred_draws() && !window.has_component_overlay(cx)
-            && !window.has_active_prompt() && !cx.has_active_drag();
-        native.borrow_mut().paint(&arcs, allowed, &open, window)
-    };
+        let gates = [!draw, blocked, RASTER_CAPTURE.get(), window.has_deferred_draws(),
+            window.has_tooltip(), window.has_component_overlay(cx), window.has_active_prompt(), cx.has_active_drag()];
+        let flags = gates.into_iter().enumerate().fold(0, |flags, (i, blocked)| flags | (u32::from(blocked) << i));
+        native.borrow_mut().paint(&arcs, flags, &open, window)
+    } else { false };
     #[cfg(not(all(target_os = "macos", feature = "automation")))]
     let native = false;
     for arc in arcs.iter().filter(|_| draw && !native) {
@@ -341,25 +348,54 @@ mod arc_probe {
         clip_x: f32, clip_y: f32, clip_w: f32, clip_h: f32,
         r: f32, g: f32, b: f32, a: f32,
     }
+    #[repr(C)]
+    #[derive(Default)]
+    struct Health {
+        placed: u32, visible: u32, animating: u32, presented: u32,
+        phase: f64, period: f64, time: f64,
+    }
     unsafe extern "C" {
         fn tb_arc_probe_create(parent: *mut c_void) -> *mut c_void;
         fn tb_arc_probe_set(host: *mut c_void, specs: *const Spec, count: usize, phase: f64, duration: f64);
         fn tb_arc_probe_drop(host: *mut c_void);
+        fn tb_arc_probe_snapshot(host: *mut c_void, health: *mut Health);
     }
     struct Host(*mut c_void);
     impl Drop for Host {
         fn drop(&mut self) { unsafe { tb_arc_probe_drop(self.0); } }
     }
     #[derive(Default)]
-    pub(super) struct Hosts(HashMap<WindowId, Host>);
+    pub(super) struct Hosts {
+        hosts: HashMap<WindowId, Host>,
+        gates: HashMap<WindowId, u32>,
+    }
+
+    pub(super) fn enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var("TB_PERF_NATIVE_ARCS").as_deref() == Ok("on"))
+    }
 
     impl Hosts {
-        pub(super) fn remove(&mut self, id: WindowId) { self.0.remove(&id); }
-        pub(super) fn paint(&mut self, arcs: &[Placed], draw: bool, open: &HashSet<WindowId>, window: &Window) -> bool {
-            static ENABLED: OnceLock<bool> = OnceLock::new();
-            if !*ENABLED.get_or_init(|| std::env::var("TB_PERF_NATIVE_ARCS").as_deref() == Ok("on")) { return false; }
+        pub(super) fn remove(&mut self, id: WindowId) { self.hosts.remove(&id); self.gates.remove(&id); }
+        pub(super) fn report(&self, id: WindowId) -> serde_json::Value {
+            let mut health = Health::default();
+            if let Some(host) = self.hosts.get(&id) {
+                unsafe { tb_arc_probe_snapshot(host.0, &mut health); }
+            }
+            let flags = self.gates.get(&id).copied().unwrap_or_default();
+            let names = ["dock-drag", "app-overlay", "capture", "deferred", "tooltip", "component-overlay", "prompt", "drag"];
+            let blocked: Vec<_> = names.into_iter().enumerate().filter_map(|(i, name)| (flags & (1 << i) != 0).then_some(name)).collect();
+            serde_json::json!({"requested": enabled(), "backend": if health.visible > 0 { "core-animation" } else { "rust" },
+                "blockedBy": blocked, "placed": health.placed, "visible": health.visible, "animating": health.animating,
+                "presented": health.presented, "phase": health.phase, "periodSeconds": health.period, "snapshotSeconds": health.time})
+        }
+        pub(super) fn paint(&mut self, arcs: &[Placed], flags: u32, open: &HashSet<WindowId>, window: &Window) -> bool {
+            if !enabled() { return false; }
             let id = window.window_handle().window_id();
-            let hosts = &mut self.0;
+            let draw = flags == 0;
+            self.gates.retain(|key, _| open.contains(key));
+            self.gates.insert(id, flags);
+            let hosts = &mut self.hosts;
             hosts.retain(|key, _| open.contains(key));
             if !hosts.contains_key(&id) {
                 let Some(parent) = crate::web_panels::native_view(window) else { return false; };
@@ -378,7 +414,7 @@ mod arc_probe {
                     r: color.r, g: color.g, b: color.b, a: color.a,
                 }
             }).collect();
-            unsafe { tb_arc_probe_set(hosts[&id].0, specs.as_ptr(), specs.len(), arc_phase() as f64, TURN_SECONDS as f64); }
+            unsafe { tb_arc_probe_set(hosts[&id].0, specs.as_ptr(), specs.len(), arc_phase(), TURN_SECONDS); }
             // Keep the original redraw loop during a drag/landing, including
             // its last frame. Once it ends, that frame reinstates native arcs.
             draw

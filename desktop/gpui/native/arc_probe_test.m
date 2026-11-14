@@ -17,6 +17,10 @@ int main(void) { @autoreleasepool {
   {.center_x=80,.center_y=120,.side=11,.radius=4,.width=1.6,.clip_x=0,.clip_y=0,.clip_w=600,.clip_h=400,.r=.1,.g=.5,.b=.8,.a=.8}
  };
  tb_arc_probe_set(raw, s, 2, .25, .9);
+ TBArcHealth health;
+ tb_arc_probe_snapshot(raw, &health);
+ assert(health.placed == 2 && health.visible == 2 && health.animating == 2);
+ assert(health.presented == 0); // A headless layer must not pass live presentation checks.
  assert(probe.clips.count == 2);
  CALayer *clip = probe.clips[0];
  CAShapeLayer *ring = (CAShapeLayer *)clip.sublayers[0];
@@ -35,6 +39,8 @@ int main(void) { @autoreleasepool {
  assert(fabs([ring animationForKey:@"turn"].beginTime - began) < 1e-9);
  assert(CGPointEqualToPoint(ring.position, CGPointMake(21,1)));
  tb_arc_probe_set(raw, NULL, 0, 0, .9);
+ tb_arc_probe_snapshot(raw, &health);
+ assert(health.placed == 0 && health.visible == 0 && health.animating == 0);
  assert(probe.clips.count == 0 && probe.host.sublayers.count == 0);
  CALayer *host = probe.host;
  probe = nil;

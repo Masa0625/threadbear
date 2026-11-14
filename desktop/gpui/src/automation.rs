@@ -863,7 +863,10 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         "frame-stats" => {
             #[cfg(feature = "frame-stats")]
             {
-                Ok(crate::frame_stats::report(window, cmd["reset"].as_bool().unwrap_or(false)))
+                let arcs = app.read(cx).arc_layer.as_ref().map(|layer| layer.read(cx).native_report(window));
+                let mut report = crate::frame_stats::report(window, cmd["reset"].as_bool().unwrap_or(false));
+                report["workingArcs"] = arcs.unwrap_or_else(|| json!({"requested": false, "backend": "rust"}));
+                Ok(report)
             }
             #[cfg(not(feature = "frame-stats"))]
             {

@@ -16,6 +16,7 @@ import { GpuiDriver } from '../support/gpui.ts';
 import { SwiftDriver } from '../support/swift.ts';
 import { ensurePerfLock } from './perf-lock.ts';
 import { recording } from './real-screen.ts';
+import { nativeArc, assertArcProgress } from './arc-progress.ts';
 
 await ensurePerfLock();
 const onlyLoading = process.env.TB_IDLE_ONLY === 'loading';
@@ -185,9 +186,17 @@ async function measure(label: string) {
   const finishWatch = await watchWindow();
   let before: Counters, after: Counters, elapsed: number, frames, windowChecks;
   let windowActiveBefore: boolean | null = null;
+  let nativeArcProof: {before?: unknown; after?: unknown} | null = null;
   try {
     if (!swift) {
-      const initial = JSON.parse(await app.do({ cmd: 'frame-stats', reset: true }));
+      let initial = JSON.parse(await app.do({ cmd: 'frame-stats', reset: true }));
+      if (label === 'another thread working' && initial.workingArcs?.requested === true) {
+        const start = nativeArc(initial.workingArcs);
+        await sleep(start.periodSeconds * 250);
+        initial = JSON.parse(await app.do({ cmd: 'frame-stats', reset: true }));
+        assertArcProgress(start, initial.workingArcs);
+        nativeArcProof = {before: {start, end: initial.workingArcs}};
+      }
       if (initial.windowActive === false || (process.env.TB_IDLE_REQUIRE_ACTIVE === 'on' && initial.windowActive !== true)) throw new Error('GPUI window is not active or this binary cannot report its active state.');
       windowActiveBefore = initial.windowActive ?? null;
     }
@@ -198,6 +207,13 @@ async function measure(label: string) {
     after = read();
     frames = swift ? null : JSON.parse(await app.do({ cmd: 'frame-stats', reset: true }));
     if (!swift && (frames.windowActive === false || (process.env.TB_IDLE_REQUIRE_ACTIVE === 'on' && frames.windowActive !== true))) throw new Error('GPUI window lost its active state during the interval.');
+    if (nativeArcProof) {
+      const start = nativeArc(frames.workingArcs);
+      await sleep(start.periodSeconds * 250);
+      const end = JSON.parse(await app.do({cmd: 'frame-stats', reset: false})).workingArcs;
+      assertArcProgress(start, end);
+      nativeArcProof.after = {start, end};
+    }
   } finally {
     windowChecks = await finishWatch();
   }
@@ -216,7 +232,7 @@ async function measure(label: string) {
   if (focus === 'offscreen') assertOffscreen(await app.dump());
   if (!swift && (offscreen || label === 'another thread working') && process.env.TB_REDUCE_MOTION !== 'on') {
     const drawn = frames?.screens.reduce((n: number, s: { drawn: number }) => n + s.drawn, 0) ?? 0;
-    if (drawn < Math.max(2, offscreen ? seconds / 2 : seconds)) throw new Error('Too few working frames; the display may be asleep or the app covered.');
+    if (!nativeArcProof && drawn < Math.max(2, offscreen ? seconds / 2 : seconds)) throw new Error('Too few working frames; the display may be asleep or the app covered.');
   }
   const times: number[] = [];
   // Swift's automation uses JXA and a file, so its round trip would mostly
@@ -239,7 +255,7 @@ async function measure(label: string) {
     idleWakeupsPerSecond: (after.idleWakeups - before.idleWakeups) / elapsed,
     contextSwitchesPerSecond: (after.contextSwitches - before.contextSwitches) / elapsed,
     commandMs: swift ? null : { p50: times[19], p95: times[37], max: times[39] }, load: os.loadavg(), frames, windowChecks,
-    loaderGateEnforced: requireLoaderPhase && label === loadingLabel,
+    loaderGateEnforced: requireLoaderPhase && label === loadingLabel, nativeArcProof,
     windowActiveBefore, windowActiveAfter: frames?.windowActive ?? null, swiftActivation,
     priority: execFileSync('ps', ['-p', String(appPid), '-o', 'pri=,nice='], { encoding: 'utf8' }).trim() }));
   // Capture only after the counters and responsiveness probes are complete.

@@ -4728,6 +4728,12 @@ impl Window {
         !self.next_frame.deferred_draws.is_empty()
     }
 
+    /// Whether the current frame has a GPUI tooltip above its content.
+    /// Tooltip prepaint runs before the ordinary tree is painted.
+    pub fn has_tooltip(&self) -> bool {
+        self.tooltip_bounds.is_some()
+    }
+
     /// Defers the drawing of the given element, scheduling it to be painted on top of the currently-drawn tree
     /// at a later time. The `priority` parameter determines the drawing order relative to other deferred elements,
     /// with higher values being drawn on top.

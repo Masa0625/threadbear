@@ -8,6 +8,11 @@ typedef struct {
     float r, g, b, a;
 } TBArcSpec;
 
+typedef struct {
+    uint32_t placed, visible, animating, presented;
+    double phase, period, time;
+} TBArcHealth;
+
 @interface TBArcProbe : NSObject
 @property(nonatomic, strong) CALayer *host;
 @property(nonatomic, strong) NSMutableArray<CALayer *> *clips;
@@ -85,4 +90,25 @@ void tb_arc_probe_set(void *pointer, const TBArcSpec *specs, size_t count, doubl
 void tb_arc_probe_drop(void *pointer) {
     TBArcProbe *probe = (__bridge_transfer TBArcProbe *)pointer;
     [probe.host removeFromSuperlayer];
+}
+
+void tb_arc_probe_snapshot(void *pointer, TBArcHealth *out) {
+    NSCAssert(NSThread.isMainThread, @"arc snapshot on main");
+    TBArcProbe *probe = (__bridge TBArcProbe *)pointer;
+    *out = (TBArcHealth){.placed = (uint32_t)probe.clips.count, .time = CACurrentMediaTime()};
+    for (CALayer *clip in probe.clips) {
+        CAShapeLayer *ring = (CAShapeLayer *)clip.sublayers.firstObject;
+        if (CGColorGetAlpha(ring.strokeColor) <= 0 || CGRectIsEmpty(CGRectIntersection(ring.frame, clip.bounds))) continue;
+        out->visible += 1;
+        CABasicAnimation *turn = (CABasicAnimation *)[ring animationForKey:@"turn"];
+        if (turn && turn.duration > 0 && turn.repeatCount > 1) out->animating += 1;
+        CALayer *presented = ring.presentationLayer;
+        if (presented) {
+            out->presented += 1;
+            double phase = atan2(presented.transform.m12, presented.transform.m11) / (2 * M_PI);
+            out->phase = phase < 0 ? phase + 1 : phase;
+            if (out->phase >= 1) out->phase = 0;
+            out->period = turn.duration;
+        }
+    }
 }
