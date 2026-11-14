@@ -2155,6 +2155,10 @@ impl PlatformWindow for MacWindow {
         this.renderer.draw(scene);
     }
 
+    fn can_present_with_updates(&self) -> bool {
+        !self.0.lock().renderer.has_pending_presentations()
+    }
+
     fn draw_with_updates(&self, scene: &gpui::Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
         // Use the same detached, synchronous renderer path as display_layer.
         // A display-link drawable has its own target presentation time and must
@@ -2172,11 +2176,9 @@ impl PlatformWindow for MacWindow {
             }
         }
         let (previous, restart) = {
-            let mut state = self.0.lock();
+            let state = self.0.lock();
             let previous = state.presents_with_transaction;
             let restart = matches!(&state.frame_source, FrameSource::Metal(frames) if frames.is_attached());
-            if restart { state.stop_display_link(); }
-            state.set_presents_with_transaction(true);
             (previous, restart)
         };
         // Commit before restoring the layer property or restarting its link.
@@ -2187,6 +2189,11 @@ impl PlatformWindow for MacWindow {
         }
         unsafe { let (): () = msg_send![class!(CATransaction), begin]; }
         let _transaction = Transaction;
+        {
+            let mut state = self.0.lock();
+            if restart { state.stop_display_link(); }
+            state.set_presents_with_transaction(true);
+        }
         let presented = self.0.lock().renderer.draw_if_ready(scene);
         // Layer operations may call back into MacWindowState. Release its mutex
         // before applying client changes or committing the outer transaction.

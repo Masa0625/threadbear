@@ -1,4 +1,5 @@
 use crate::metal_atlas::MetalAtlas;
+use crate::presentation::PresentationTracker;
 use anyhow::{Context as _, Result};
 use block2::RcBlock;
 use gpui::{
@@ -131,6 +132,7 @@ pub struct MetalRenderer {
     is_apple_gpu: bool,
     is_unified_memory: bool,
     presents_with_transaction: bool,
+    presentations: PresentationTracker,
     display_link_mode: DisplayLinkMode,
     /// For headless rendering, tracks whether output should be opaque
     opaque: bool,
@@ -418,6 +420,7 @@ impl MetalRenderer {
             device,
             layer,
             presents_with_transaction: false,
+            presentations: PresentationTracker::default(),
             display_link_mode: DisplayLinkMode::Detached,
             is_apple_gpu,
             is_unified_memory,
@@ -595,6 +598,9 @@ impl MetalRenderer {
         self.draw_if_ready(scene);
     }
 
+    /// Previous link drawables may still be waiting for their target vsync.
+    pub fn has_pending_presentations(&self) -> bool { self.presentations.pending() }
+
     /// Whether this scene reached drawable presentation. Native sublayers may
     /// change with it only after success, inside the same CA transaction.
     pub fn draw_if_ready(&mut self, scene: &Scene) -> bool {
@@ -642,6 +648,11 @@ impl MetalRenderer {
             }
         };
 
+        let pending = self.presentations.begin();
+        let shown = RcBlock::new(move |_: ptr::NonNull<ProtocolObject<dyn MTLDrawable>>| pending.complete());
+        // SAFETY: Metal copies the block. Its owned atomic guard tolerates
+        // completion on another thread and cancellation without a callback.
+        unsafe { drawable.addPresentedHandler(RcBlock::as_ptr(&shown)); }
         if self.presents_with_transaction {
             command_buffer.commit();
             command_buffer.waitUntilScheduled();

@@ -26,6 +26,7 @@ define_class!(
         fn needs_update(&self, _link: &CAMetalDisplayLink, update: &CAMetalDisplayLinkUpdate) {
             // The callback may destroy its frame source, releasing our owner's retain.
             let delegate = self.retain();
+            let _link = _link.retain();
             (delegate.ivars().callback)(update);
         }
     }

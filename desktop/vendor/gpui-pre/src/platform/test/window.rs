@@ -51,6 +51,7 @@ pub(crate) struct TestWindowState {
     frame_wake_count: Rc<Cell<usize>>,
     frame_scheduled: bool,
     pub(crate) presentations_to_fail: usize,
+    pub(crate) presentations_to_defer: usize,
     frame_callback_pending: bool,
     input_handler: Option<PlatformInputHandler>,
     text_input_configurations: Vec<TextInputConfiguration>,
@@ -127,6 +128,7 @@ impl TestWindow {
             frame_wake_count: Rc::new(Cell::new(0)),
             frame_scheduled: false,
             presentations_to_fail: 0,
+            presentations_to_defer: 0,
             frame_callback_pending: false,
             input_handler: None,
             text_input_configurations: Vec::new(),
@@ -566,6 +568,13 @@ impl PlatformWindow for TestWindow {
         if let Some(renderer) = &mut state.renderer {
             renderer.render_scene(scene, device_size).warn_on_err();
         }
+    }
+
+    fn can_present_with_updates(&self) -> bool {
+        let mut state = self.0.lock();
+        if state.presentations_to_defer == 0 { return true; }
+        state.presentations_to_defer -= 1;
+        false
     }
 
     fn draw_with_updates(&self, scene: &Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
