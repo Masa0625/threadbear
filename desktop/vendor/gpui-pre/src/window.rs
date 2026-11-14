@@ -4722,6 +4722,12 @@ impl Window {
         }
     }
 
+    /// Whether prepaint queued any elements above the ordinary tree this frame.
+    /// Native content can yield to those overlays when painting the tree.
+    pub fn has_deferred_draws(&self) -> bool {
+        !self.next_frame.deferred_draws.is_empty()
+    }
+
     /// Defers the drawing of the given element, scheduling it to be painted on top of the currently-drawn tree
     /// at a later time. The `priority` parameter determines the drawing order relative to other deferred elements,
     /// with higher values being drawn on top.

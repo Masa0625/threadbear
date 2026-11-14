@@ -263,8 +263,10 @@ async fn run(app: &WeakEntity<Threadbear>, window: AnyWindowHandle, cmd: &Value,
         let image = cx.update_window(window, |_, window, cx| {
             // A covered window gets no system frames. Draw its latest state
             // before reading the pixels, including pictures just loaded.
-            window.render_frame(cx);
-            window.render_to_image().map_err(|e| e.to_string())
+            crate::spinner::raster_capture(|| {
+                window.render_frame(cx);
+                window.render_to_image().map_err(|e| e.to_string())
+            })
         }).map_err(|e| e.to_string())??;
         // Encoding and disk writes must not stall the app's thread. Await
         // the save so the socket replies only when this shot is complete.

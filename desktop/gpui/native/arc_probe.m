@@ -3,7 +3,7 @@
 #import <QuartzCore/QuartzCore.h>
 
 typedef struct {
-    float x, y, side, radius, width;
+    float center_x, center_y, side, radius, width;
     float clip_x, clip_y, clip_w, clip_h;
     float r, g, b, a;
 } TBArcSpec;
@@ -29,11 +29,16 @@ void *tb_arc_probe_create(void *parent) {
     return (__bridge_retained void *)probe;
 }
 
-void tb_arc_probe_set(void *pointer, const TBArcSpec *specs, size_t count, double phase) {
+void tb_arc_probe_set(void *pointer, const TBArcSpec *specs, size_t count, double phase, double duration) {
     NSCAssert(NSThread.isMainThread, @"arc probe on main");
     TBArcProbe *probe = (__bridge TBArcProbe *)pointer;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    probe.host.frame = probe.host.superlayer.bounds;
+    // GPUI's backing layer tags its RGB components with its own color space
+    // (Display P3 on the Mac). Reuse that interpretation, not Generic RGB.
+    CALayer *parent = probe.host.superlayer;
+    CGColorSpaceRef colorSpace = [parent isKindOfClass:CAMetalLayer.class] ? ((CAMetalLayer *)parent).colorspace : NULL;
     while (probe.clips.count > count) {
         [probe.clips.lastObject removeFromSuperlayer];
         [probe.clips removeLastObject];
@@ -50,10 +55,10 @@ void tb_arc_probe_set(void *pointer, const TBArcSpec *specs, size_t count, doubl
         CABasicAnimation *turn = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
         turn.fromValue = @0;
         turn.toValue = @(2 * M_PI);
-        turn.duration = 0.9;
+        turn.duration = duration;
         turn.repeatCount = HUGE_VALF;
         turn.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionLinear];
-        turn.beginTime = CACurrentMediaTime() - phase * 0.9;
+        turn.beginTime = CACurrentMediaTime() - phase * duration;
         [ring addAnimation:turn forKey:@"turn"];
     }
     for (size_t i = 0; i < count; ++i) {
@@ -62,12 +67,13 @@ void tb_arc_probe_set(void *pointer, const TBArcSpec *specs, size_t count, doubl
         CAShapeLayer *ring = (CAShapeLayer *)clip.sublayers.firstObject;
         clip.frame = CGRectMake(s.clip_x, s.clip_y, s.clip_w, s.clip_h);
         ring.bounds = CGRectMake(0, 0, s.side, s.side);
-        ring.position = CGPointMake(s.x + s.side / 2 - s.clip_x, s.y + s.side / 2 - s.clip_y);
+        ring.position = CGPointMake(s.center_x - s.clip_x, s.center_y - s.clip_y);
         CGMutablePathRef path = CGPathCreateMutable();
         CGPathAddArc(path, NULL, s.side / 2, s.side / 2, s.radius, 0, 1.5 * M_PI, false);
         ring.path = path;
         CGPathRelease(path);
-        CGColorRef color = CGColorCreateGenericRGB(s.r, s.g, s.b, s.a);
+        CGFloat components[] = {s.r, s.g, s.b, s.a};
+        CGColorRef color = colorSpace ? CGColorCreate(colorSpace, components) : CGColorCreateSRGB(s.r, s.g, s.b, s.a);
         ring.strokeColor = color;
         CGColorRelease(color);
         ring.lineWidth = s.width;

@@ -1435,6 +1435,13 @@ impl Threadbear {
         self.tour_watch(window, cx);
         let has_rail = self.pane_thread().is_some();
         let rail = has_rail.then(|| self.render_right_rail(cx));
+        #[cfg(all(target_os = "macos", feature = "automation"))]
+        {
+            let blocked = self.share_popover.is_some() || self.anything.is_some()
+                || self.tour.tour.step.is_some() || self.side.read(cx).viewer.is_open()
+                || self.flight.is_drawing(cx);
+            arc_layer.update(cx, |layer, _| layer.block_native(blocked));
+        }
         let root = div()
             .id("threadbear-shell")
             .track_focus(&self.root_focus)

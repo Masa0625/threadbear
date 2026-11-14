@@ -132,6 +132,13 @@ pub(crate) struct Flights {
 }
 
 impl Flights {
+    /// Native content must yield while any flight still paints over the dock.
+    pub(crate) fn is_drawing(&self, cx: &App) -> bool {
+        self.view.as_ref().is_some_and(|view| {
+            let now = Instant::now();
+            view.read(cx).cards.iter().any(|card| !card.done(now.duration_since(card.started.get().unwrap_or(now))))
+        })
+    }
     /// Whether a section's rows should leave this thread out for now.
     pub(crate) fn holds(&self, section: &str, id: &str) -> bool {
         match self.flying.get(id) {

@@ -11,6 +11,10 @@ use std::rc::Rc;
 
 /// Extension trait for [`Window`] to add dialog, sheet .. functionality.
 pub trait WindowExt: Sized {
+    /// Component-owned layers above application content: sheets, dialogs
+    /// (including their exit transition), and notifications. Deferred popovers
+    /// and tooltips are separately reported by `Window::has_deferred_draws`.
+    fn has_component_overlay(&self, cx: &App) -> bool;
     /// Opens a Sheet at right placement.
     ///
     /// The builder follows the same rendering contract as
@@ -142,6 +146,12 @@ pub trait WindowExt: Sized {
 }
 
 impl WindowExt for Window {
+    fn has_component_overlay(&self, cx: &App) -> bool {
+        WindowState::try_read(self, cx).is_some_and(|state| {
+            state.active_sheet.is_some() || !state.active_dialogs.is_empty()
+                || !state.notification.read(cx).notifications().is_empty()
+        })
+    }
     #[inline]
     fn open_sheet<F>(&mut self, cx: &mut App, build: F)
     where

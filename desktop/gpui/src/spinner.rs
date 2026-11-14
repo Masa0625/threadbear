@@ -48,8 +48,6 @@ thread_local! {
 /// How much of the sidebar list's foot fades into the background
 /// (row_motion.rs's FOOT_FADE): an arc in it fades as its row does.
 const FOOT_FADE: f32 = 34.;
-/// A window whose layer hasn't drawn for this long has closed: its arcs go.
-const WINDOW_GONE: Duration = Duration::from_secs(10);
 
 #[derive(IntoElement)]
 pub(crate) struct TurningArc {
@@ -88,7 +86,7 @@ impl RenderOnce for TurningArc {
                 // (`view_drawing`), so it clears them next time: not in the
                 // dock's drag ghost, which draws the sidebar under the dock's
                 // name and turns its arcs itself as it's drawn every frame.
-                if layered && LAYERED.with(|l| l.borrow().contains_key(&id)) && drawing_now(id, window.current_view()) {
+                if layered && LAYERED.with(|l| l.borrow().contains(&id)) && drawing_now(id, window.current_view()) {
                     // `opacity` scales the alpha: the row's own opacity, once.
                     let color = color.opacity(window.element_opacity());
                     place(id, window.current_view(), bounds, window.content_mask(), color);
@@ -137,10 +135,12 @@ fn arc_phase() -> f32 {
 }
 
 thread_local! {
+    static RASTER_CAPTURE: Cell<bool> = const { Cell::new(false) };
     /// The views with a frame on its way for their arcs.
     static TICKING: RefCell<HashSet<EntityId>> = RefCell::new(HashSet::new());
-    /// The windows with a layer, and when it last drew.
-    static LAYERED: RefCell<HashMap<WindowId, Instant>> = RefCell::new(HashMap::new());
+    /// The windows with an arc layer. App's actual window list retires them;
+    /// an open, quiet window need not redraw to prove that it is alive.
+    static LAYERED: RefCell<HashSet<WindowId>> = RefCell::new(HashSet::new());
     /// The arcs each window's layer draws.
     static PLACED: RefCell<HashMap<WindowId, Vec<Placed>>> = RefCell::new(HashMap::new());
     /// Counts the frames layers draw: one ends as its layer's paint does.
@@ -196,20 +196,66 @@ pub(crate) struct ArcLayer {
     dock_view: Entity<threadbear_dock::DockView>,
     /// The panel the arcs are in.
     panel: &'static str,
+    // The canvas keeps this alive while its frame is retained; closing the
+    // window drops the last owner and removes its native layers immediately.
+    #[cfg(all(target_os = "macos", feature = "automation"))]
+    native: std::rc::Rc<RefCell<arc_probe::Hosts>>,
+    #[cfg(all(target_os = "macos", feature = "automation"))]
+    native_closed: Option<Subscription>,
+    #[cfg(all(target_os = "macos", feature = "automation"))]
+    native_blocked: bool,
 }
 
 impl ArcLayer {
+    #[cfg(all(target_os = "macos", feature = "automation"))]
+    pub(crate) fn block_native(&mut self, blocked: bool) { self.native_blocked = blocked; }
     pub(crate) fn new(dock: Entity<threadbear_dock::DockModel>, dock_view: Entity<threadbear_dock::DockView>, panel: &'static str) -> Self {
-        Self { dock, dock_view, panel }
+        Self {
+            dock, dock_view, panel,
+            #[cfg(all(target_os = "macos", feature = "automation"))]
+            native: Default::default(),
+            #[cfg(all(target_os = "macos", feature = "automation"))]
+            native_closed: None,
+            #[cfg(all(target_os = "macos", feature = "automation"))]
+            native_blocked: false,
+        }
     }
 }
 
+/// The scripted image reads Metal's scene, which does not include native
+/// layers. Paint the arc into that scene, then its normal next turn restores
+/// native animation at the same phase. No Screen Recording grant is needed.
+#[cfg(feature = "automation")]
+pub(crate) fn raster_capture<R>(capture: impl FnOnce() -> R) -> R {
+    RASTER_CAPTURE.with(|flag| {
+        struct Restore<'a>(&'a Cell<bool>, bool);
+        impl Drop for Restore<'_> { fn drop(&mut self) { self.0.set(self.1); } }
+        let _restore = Restore(flag, flag.replace(true));
+        capture()
+    })
+}
+
 impl Render for ArcLayer {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(all(target_os = "macos", feature = "automation"))]
+        if self.native_closed.is_none() {
+            let native = std::rc::Rc::downgrade(&self.native);
+            self.native_closed = Some(cx.on_window_closed(move |_, id| {
+                if let Some(native) = native.upgrade() { native.borrow_mut().remove(id); }
+                LAYERED.with(|l| l.borrow_mut().remove(&id));
+                PLACED.with(|p| p.borrow_mut().remove(&id));
+                DRAWN.with(|d| d.borrow_mut().retain(|(window, _), _| *window != id));
+            }));
+        }
+        let _ = cx;
         let (dock, dock_view, panel) = (self.dock.clone(), self.dock_view.clone(), self.panel);
+        #[cfg(all(target_os = "macos", feature = "automation"))]
+        let native = self.native.clone();
+        #[cfg(all(target_os = "macos", feature = "automation"))]
+        let blocked = self.native_blocked;
         canvas(
             |_, window, _| {
-                LAYERED.with(|l| l.borrow_mut().insert(window.window_handle().window_id(), Instant::now()));
+                LAYERED.with(|l| l.borrow_mut().insert(window.window_handle().window_id()));
             },
             move |_, _, window, cx| {
                 // As the dock draws it: a collapsed sidebar (⌘/) is left out,
@@ -219,7 +265,12 @@ impl Render for ArcLayer {
                 if !in_front {
                     PLACED.with(|p| p.borrow_mut().remove(&window.window_handle().window_id()));
                 }
-                paint_layer(!dragging, window, cx)
+                paint_layer(!dragging, window, cx,
+                    #[cfg(all(target_os = "macos", feature = "automation"))]
+                    &native,
+                    #[cfg(all(target_os = "macos", feature = "automation"))]
+                    blocked,
+                )
             },
         )
         .absolute()
@@ -235,16 +286,17 @@ fn foot_shown(bottom: f32, y: f32) -> f32 {
     ((bottom - y) / FOOT_FADE).clamp(0., 1.)
 }
 
-fn paint_layer(draw: bool, window: &mut Window, cx: &mut App) {
+fn paint_layer(draw: bool, window: &mut Window, cx: &mut App,
+    #[cfg(all(target_os = "macos", feature = "automation"))]
+    native: &RefCell<arc_probe::Hosts>,
+    #[cfg(all(target_os = "macos", feature = "automation"))]
+    blocked: bool,
+) {
     let id = window.window_handle().window_id();
-    let now = Instant::now();
     let frame = FRAMES.get();
     // Closed windows' arcs go.
-    let open: HashSet<WindowId> = LAYERED.with(|l| {
-        let mut l = l.borrow_mut();
-        l.retain(|_, at| now.duration_since(*at) < WINDOW_GONE);
-        l.keys().copied().collect()
-    });
+    let open: HashSet<WindowId> = cx.windows().into_iter().map(|w| w.window_id()).collect();
+    LAYERED.with(|l| l.borrow_mut().retain(|id| open.contains(id)));
     let arcs = PLACED.with(|p| {
         let mut p = p.borrow_mut();
         p.retain(|w, _| open.contains(w));
@@ -256,7 +308,13 @@ fn paint_layer(draw: bool, window: &mut Window, cx: &mut App) {
     // This native-overlay experiment is available only in scripted builds.
     // It intentionally has no production path until overlay ordering is proved.
     #[cfg(all(target_os = "macos", feature = "automation"))]
-    let native = arc_probe::paint(&arcs, draw, &open, window);
+    let native = {
+        use gpui_kit::component::WindowExt as _;
+        let allowed = draw && !blocked && !RASTER_CAPTURE.get()
+            && !window.has_deferred_draws() && !window.has_component_overlay(cx)
+            && !window.has_active_prompt() && !cx.has_active_drag();
+        native.borrow_mut().paint(&arcs, allowed, &open, window)
+    };
     #[cfg(not(all(target_os = "macos", feature = "automation")))]
     let native = false;
     for arc in arcs.iter().filter(|_| draw && !native) {
@@ -279,29 +337,29 @@ mod arc_probe {
 
     #[repr(C)]
     struct Spec {
-        x: f32, y: f32, side: f32, radius: f32, width: f32,
+        center_x: f32, center_y: f32, side: f32, radius: f32, width: f32,
         clip_x: f32, clip_y: f32, clip_w: f32, clip_h: f32,
         r: f32, g: f32, b: f32, a: f32,
     }
     unsafe extern "C" {
         fn tb_arc_probe_create(parent: *mut c_void) -> *mut c_void;
-        fn tb_arc_probe_set(host: *mut c_void, specs: *const Spec, count: usize, phase: f64);
+        fn tb_arc_probe_set(host: *mut c_void, specs: *const Spec, count: usize, phase: f64, duration: f64);
         fn tb_arc_probe_drop(host: *mut c_void);
     }
     struct Host(*mut c_void);
     impl Drop for Host {
         fn drop(&mut self) { unsafe { tb_arc_probe_drop(self.0); } }
     }
-    thread_local! {
-        static HOSTS: RefCell<HashMap<WindowId, Host>> = RefCell::new(HashMap::new());
-    }
+    #[derive(Default)]
+    pub(super) struct Hosts(HashMap<WindowId, Host>);
 
-    pub(super) fn paint(arcs: &[Placed], draw: bool, open: &HashSet<WindowId>, window: &Window) -> bool {
-        static ENABLED: OnceLock<bool> = OnceLock::new();
-        if !*ENABLED.get_or_init(|| std::env::var("TB_PERF_NATIVE_ARCS").as_deref() == Ok("on")) { return false; }
-        let id = window.window_handle().window_id();
-        HOSTS.with(|hosts| {
-            let mut hosts = hosts.borrow_mut();
+    impl Hosts {
+        pub(super) fn remove(&mut self, id: WindowId) { self.0.remove(&id); }
+        pub(super) fn paint(&mut self, arcs: &[Placed], draw: bool, open: &HashSet<WindowId>, window: &Window) -> bool {
+            static ENABLED: OnceLock<bool> = OnceLock::new();
+            if !*ENABLED.get_or_init(|| std::env::var("TB_PERF_NATIVE_ARCS").as_deref() == Ok("on")) { return false; }
+            let id = window.window_handle().window_id();
+            let hosts = &mut self.0;
             hosts.retain(|key, _| open.contains(key));
             if !hosts.contains_key(&id) {
                 let Some(parent) = crate::web_panels::native_view(window) else { return false; };
@@ -313,16 +371,18 @@ mod arc_probe {
                 let side = f32::from(arc.bounds.size.width).min(f32::from(arc.bounds.size.height));
                 let color: Rgba = arc.color.opacity(foot_shown(f32::from(arc.mask.bounds.bottom()), f32::from(arc.bounds.center().y))).into();
                 Spec {
-                    x: arc.bounds.origin.x.into(), y: arc.bounds.origin.y.into(), side,
+                    center_x: arc.bounds.center().x.into(), center_y: arc.bounds.center().y.into(), side,
                     radius: ((side - style::zoomed(3.)) / 2.).max(1.), width: style::zoomed(1.6),
                     clip_x: arc.mask.bounds.origin.x.into(), clip_y: arc.mask.bounds.origin.y.into(),
                     clip_w: arc.mask.bounds.size.width.into(), clip_h: arc.mask.bounds.size.height.into(),
                     r: color.r, g: color.g, b: color.b, a: color.a,
                 }
             }).collect();
-            unsafe { tb_arc_probe_set(hosts[&id].0, specs.as_ptr(), specs.len(), arc_phase() as f64); }
-            true
-        })
+            unsafe { tb_arc_probe_set(hosts[&id].0, specs.as_ptr(), specs.len(), arc_phase() as f64, TURN_SECONDS as f64); }
+            // Keep the original redraw loop during a drag/landing, including
+            // its last frame. Once it ends, that frame reinstates native arcs.
+            draw
+        }
     }
 }
 
@@ -543,6 +603,41 @@ mod spinner_tests {
         delivered
     }
     fn renders() -> [u32; 2] { RENDERS.with(|c| [c[0].get(), c[1].get()]) }
+
+    struct OverlayProbe { open: bool, seen: Rc<Cell<bool>> }
+    impl Render for OverlayProbe {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let seen = self.seen.clone();
+            div().size_full()
+                .child(gpui_kit::canvas(|_, _, _| {}, move |_, _, window, _| seen.set(window.has_deferred_draws())).size_full())
+                .children(self.open.then(|| gpui_kit::deferred(div().size(px(20.)))))
+        }
+    }
+
+    #[gpui_kit::test]
+    fn overlays_are_known_before_the_underlying_canvas_paints(cx: &mut TestAppContext) {
+        let seen = Rc::new(Cell::new(true));
+        let window = cx.open_window(size(px(100.), px(100.)), |_, _| OverlayProbe { open: false, seen: seen.clone() });
+        cx.run_until_parked();
+        assert!(!seen.get());
+        window.update(cx, |view, _, cx| { view.open = true; cx.notify(); }).unwrap();
+        cx.run_until_parked();
+        assert!(seen.get(), "native content must yield on the very first overlay frame");
+        window.update(cx, |view, _, cx| { view.open = false; cx.notify(); }).unwrap();
+        cx.run_until_parked();
+        assert!(!seen.get(), "native animation can resume after the overlay leaves");
+    }
+
+    #[test]
+    fn raster_capture_restores_the_previous_scope() {
+        assert!(!super::RASTER_CAPTURE.get());
+        super::raster_capture(|| {
+            assert!(super::RASTER_CAPTURE.get());
+            super::raster_capture(|| assert!(super::RASTER_CAPTURE.get()));
+            assert!(super::RASTER_CAPTURE.get());
+        });
+        assert!(!super::RASTER_CAPTURE.get());
+    }
 
     #[cfg(feature = "frame-stats")]
     struct LoaderProbeHost(bool);
