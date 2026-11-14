@@ -659,6 +659,7 @@ struct MacWindowState {
     cursor_visible: Arc<AtomicBool>,
     frame_source: FrameSource,
     renderer: renderer::Renderer,
+    presents_with_transaction: bool,
     request_frame_callback: Option<Box<dyn FnMut(RequestFrameOptions)>>,
     event_callback: Option<Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>>,
     activate_callback: Option<Box<dyn FnMut(bool)>>,
@@ -707,6 +708,11 @@ struct MacWindowState {
 }
 
 impl MacWindowState {
+    fn set_presents_with_transaction(&mut self, enabled: bool) {
+        self.renderer.set_presents_with_transaction(enabled);
+        self.presents_with_transaction = enabled;
+    }
+
     fn move_traffic_light(&mut self) {
         if let Some(traffic_light_position) = self.traffic_light_position {
             if self.is_fullscreen() && !self.is_exiting_fullscreen {
@@ -1124,6 +1130,7 @@ impl MacWindow {
                     None => FrameSource::DisplayLink(None),
                 },
                 renderer,
+                presents_with_transaction: false,
                 request_frame_callback: None,
                 event_callback: None,
                 activate_callback: None,
@@ -2146,6 +2153,35 @@ impl PlatformWindow for MacWindow {
     fn draw(&self, scene: &gpui::Scene) {
         let mut this = self.0.lock();
         this.renderer.draw(scene);
+    }
+
+    fn draw_with_updates(&self, scene: &gpui::Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
+        // Pair native sublayers with the replacement drawable in one commit.
+        // The renderer's existing transaction path waits for command scheduling
+        // before presenting. Failed drawable/render attempts leave both alone.
+        struct Transaction;
+        impl Drop for Transaction {
+            fn drop(&mut self) { unsafe { let (): () = msg_send![class!(CATransaction), commit]; } }
+        }
+        unsafe { let (): () = msg_send![class!(CATransaction), begin]; }
+        let _transaction = Transaction;
+        let presented = {
+            struct Restore<'a> { state: &'a mut MacWindowState, previous: bool }
+            impl Drop for Restore<'_> {
+                fn drop(&mut self) { self.state.set_presents_with_transaction(self.previous); }
+            }
+            let mut state = self.0.lock();
+            let previous = state.presents_with_transaction;
+            state.set_presents_with_transaction(true);
+            let restore = Restore { state: &mut state, previous };
+            restore.state.renderer.draw_if_ready(scene)
+        };
+        // Layer operations may call back into MacWindowState. Release its mutex
+        // before applying client changes or committing the outer transaction.
+        if presented {
+            for update in updates.drain(..) { update(); }
+        }
+        presented
     }
 
     // GPUI calls this without waking the frame waker when a window only needs
@@ -3266,7 +3302,7 @@ extern "C" fn window_did_change_key_status(this: &AnyObject, selector: Sel, _: *
 
         if lock.activated_least_once {
             if let Some(mut callback) = lock.request_frame_callback.take() {
-                lock.renderer.set_presents_with_transaction(true);
+                lock.set_presents_with_transaction(true);
                 lock.stop_display_link();
                 drop(lock);
                 callback(RequestFrameOptions {
@@ -3277,7 +3313,7 @@ extern "C" fn window_did_change_key_status(this: &AnyObject, selector: Sel, _: *
 
                 let mut lock = window_state.lock();
                 lock.request_frame_callback = Some(callback);
-                lock.renderer.set_presents_with_transaction(false);
+                lock.set_presents_with_transaction(false);
                 lock.start_display_link(&window_state);
             }
         } else {
@@ -3392,7 +3428,7 @@ extern "C" fn display_layer(this: &AnyObject, _: Sel, _: *mut AnyObject) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.lock();
     if let Some(mut callback) = lock.request_frame_callback.take() {
-        lock.renderer.set_presents_with_transaction(true);
+        lock.set_presents_with_transaction(true);
         lock.stop_display_link();
         drop(lock);
         callback(RequestFrameOptions {
@@ -3403,7 +3439,7 @@ extern "C" fn display_layer(this: &AnyObject, _: Sel, _: *mut AnyObject) {
 
         let mut lock = window_state.lock();
         lock.request_frame_callback = Some(callback);
-        lock.renderer.set_presents_with_transaction(false);
+        lock.set_presents_with_transaction(false);
         lock.start_display_link(&window_state);
     }
 }

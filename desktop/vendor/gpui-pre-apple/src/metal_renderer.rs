@@ -592,20 +592,26 @@ impl MetalRenderer {
     }
 
     pub fn draw(&mut self, scene: &Scene) {
+        self.draw_if_ready(scene);
+    }
+
+    /// Whether this scene reached drawable presentation. Native sublayers may
+    /// change with it only after success, inside the same CA transaction.
+    pub fn draw_if_ready(&mut self, scene: &Scene) -> bool {
         let layer = match &self.layer {
             Some(l) => l.clone(),
             None => {
                 log::error!(
                     "draw() called on headless renderer - use render_scene_to_image() instead"
                 );
-                return;
+                return false;
             }
         };
         let drawable = match &mut self.display_link_mode {
             DisplayLinkMode::Attached { drawable } => {
                 let Some(drawable) = drawable.take() else {
                     log::error!("skipped a frame drawn outside its display link's update");
-                    return;
+                    return false;
                 };
                 drawable
             }
@@ -615,7 +621,7 @@ impl MetalRenderer {
                         "failed to retrieve next drawable, drawable size: {:?}",
                         layer.drawableSize()
                     );
-                    return;
+                    return false;
                 };
                 drawable
             }
@@ -632,7 +638,7 @@ impl MetalRenderer {
             Ok(command_buffer) => command_buffer,
             Err(error) => {
                 log::error!("failed to render: {error:#}");
-                return;
+                return false;
             }
         };
 
@@ -644,6 +650,7 @@ impl MetalRenderer {
             command_buffer.presentDrawable(ProtocolObject::from_ref(&*drawable));
             command_buffer.commit();
         }
+        true
     }
 
     fn render_frame(

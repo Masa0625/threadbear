@@ -308,7 +308,7 @@ fn foot_shown(bottom: f32, y: f32) -> f32 {
 
 fn paint_layer(draw: bool, window: &mut Window, cx: &mut App,
     #[cfg(all(target_os = "macos", feature = "automation"))]
-    native: &RefCell<arc_probe::Hosts>,
+    native: &std::rc::Rc<RefCell<arc_probe::Hosts>>,
     #[cfg(all(target_os = "macos", feature = "automation"))]
     blocked: bool,
 ) {
@@ -333,7 +333,12 @@ fn paint_layer(draw: bool, window: &mut Window, cx: &mut App,
         let gates = [!draw, blocked, RASTER_CAPTURE.get(), window.has_deferred_draws(),
             window.has_tooltip(), window.has_component_overlay(cx), window.has_active_prompt(), cx.has_active_drag()];
         let flags = gates.into_iter().enumerate().fold(0, |flags, (i, blocked)| flags | (u32::from(blocked) << i));
-        native.borrow_mut().paint(&arcs, flags, &open, window)
+        let (draw_native, update) = native.borrow_mut().prepare(&arcs, flags, &open, window);
+        if let Some(update) = update {
+            let native = native.clone();
+            window.defer_until_present(move || native.borrow_mut().apply(update));
+        }
+        draw_native
     } else { false };
     #[cfg(not(all(target_os = "macos", feature = "automation")))]
     let native = false;
@@ -362,6 +367,7 @@ mod arc_probe {
     use std::ffi::c_void;
 
     #[repr(C)]
+    #[derive(Clone, PartialEq)]
     struct Spec {
         center_x: f32, center_y: f32, side: f32, radius: f32, width: f32,
         clip_x: f32, clip_y: f32, clip_w: f32, clip_h: f32,
@@ -387,6 +393,14 @@ mod arc_probe {
     pub(super) struct Hosts {
         hosts: HashMap<WindowId, Host>,
         gates: HashMap<WindowId, u32>,
+        committed: HashMap<WindowId, (Vec<Spec>, f32)>,
+    }
+    pub(super) struct Update {
+        id: WindowId,
+        specs: Vec<Spec>,
+        scale: f32,
+        phase: f64,
+        flags: u32,
     }
 
     pub(super) fn enabled() -> bool {
@@ -395,7 +409,7 @@ mod arc_probe {
     }
 
     impl Hosts {
-        pub(super) fn remove(&mut self, id: WindowId) { self.hosts.remove(&id); self.gates.remove(&id); }
+        pub(super) fn remove(&mut self, id: WindowId) { self.hosts.remove(&id); self.gates.remove(&id); self.committed.remove(&id); }
         pub(super) fn report(&self, id: WindowId) -> serde_json::Value {
             let mut health = Health::default();
             if let Some(host) = self.hosts.get(&id) {
@@ -409,20 +423,14 @@ mod arc_probe {
                 "presented": health.presented, "phase": health.phase, "periodSeconds": health.period,
                 "expectedPeriodSeconds": TURN_SECONDS, "snapshotSeconds": health.time})
         }
-        pub(super) fn paint(&mut self, arcs: &[Placed], flags: u32, open: &HashSet<WindowId>, window: &Window) -> bool {
-            if !enabled() { return false; }
+        // ArcLayer is uncached and paints on every draw. Preparation may create
+        // an empty host, but visible mutations wait for the matching GPU scene.
+        pub(super) fn prepare(&mut self, arcs: &[Placed], flags: u32, open: &HashSet<WindowId>, window: &Window) -> (bool, Option<Update>) {
             let id = window.window_handle().window_id();
             let draw = flags == 0;
             self.gates.retain(|key, _| open.contains(key));
-            self.gates.insert(id, flags);
-            let hosts = &mut self.hosts;
-            hosts.retain(|key, _| open.contains(key));
-            if !hosts.contains_key(&id) {
-                let Some(parent) = crate::web_panels::native_view(window) else { return false; };
-                let raw = unsafe { tb_arc_probe_create(parent) };
-                if raw.is_null() { return false; }
-                hosts.insert(id, Host(raw));
-            }
+            self.hosts.retain(|key, _| open.contains(key));
+            self.committed.retain(|key, _| open.contains(key));
             let specs: Vec<Spec> = arcs.iter().filter(|_| draw).map(|arc| {
                 let side = f32::from(arc.bounds.size.width).min(f32::from(arc.bounds.size.height));
                 let color: Rgba = arc.color.opacity(foot_shown(f32::from(arc.mask.bounds.bottom()), f32::from(arc.bounds.center().y))).into();
@@ -434,10 +442,30 @@ mod arc_probe {
                     r: color.r, g: color.g, b: color.b, a: color.a,
                 }
             }).collect();
-            unsafe { tb_arc_probe_set(hosts[&id].0, specs.as_ptr(), specs.len(), arc_phase(), TURN_SECONDS); }
-            // Keep the original redraw loop during a drag/landing, including
-            // its last frame. Once it ends, that frame reinstates native arcs.
-            draw
+            if specs.is_empty() && !self.hosts.contains_key(&id) {
+                self.gates.insert(id, flags);
+                return (draw, None);
+            }
+            if !self.hosts.contains_key(&id) {
+                let Some(parent) = crate::web_panels::native_view(window) else { return (false, None); };
+                let raw = unsafe { tb_arc_probe_create(parent) };
+                if raw.is_null() { return (false, None); }
+                self.hosts.insert(id, Host(raw));
+            }
+            let scale = window.scale_factor();
+            if self.committed.get(&id).is_some_and(|(old, old_scale)| *old == specs && *old_scale == scale) {
+                self.gates.insert(id, flags);
+                return (draw, None);
+            }
+            (draw, Some(Update { id, specs, scale, phase: arc_phase(), flags }))
+        }
+
+        pub(super) fn apply(&mut self, update: Update) {
+            // Closing the window may have removed the host after this draw.
+            let Some(host) = self.hosts.get(&update.id) else { return; };
+            unsafe { tb_arc_probe_set(host.0, update.specs.as_ptr(), update.specs.len(), update.phase, TURN_SECONDS); }
+            self.gates.insert(update.id, update.flags);
+            self.committed.insert(update.id, (update.specs, update.scale));
         }
     }
 }
@@ -668,6 +696,41 @@ mod spinner_tests {
                 .child(gpui_kit::canvas(|_, _, _| {}, move |_, _, window, _| seen.set(window.has_deferred_draws())).size_full())
                 .children(self.open.then(|| gpui_kit::deferred(div().size(px(20.)))))
         }
+    }
+
+    struct PresentProbe { generation: u32, applied: Rc<std::cell::RefCell<Vec<u32>>> }
+    impl Render for PresentProbe {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let generation = self.generation;
+            let applied = self.applied.clone();
+            gpui_kit::canvas(|_, _, _| {}, move |_, _, window, _| {
+                let applied = applied.clone();
+                window.defer_until_present(move || applied.borrow_mut().push(generation));
+            }).size_full()
+        }
+    }
+
+    #[gpui_kit::test]
+    fn native_updates_wait_for_the_matching_scene_to_present(cx: &mut TestAppContext) {
+        let applied = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let handle = cx.open_window(size(px(100.), px(100.)), |_, _| PresentProbe { generation: 1, applied: applied.clone() });
+        cx.run_until_parked();
+        cx.update_window(handle.into(), |root, window, cx| {
+            let root = root.downcast::<PresentProbe>().expect("presentation probe");
+            applied.borrow_mut().clear();
+            root.update(cx, |view, _| view.generation = 2);
+            window.refresh();
+            window.draw(cx).clear(cx);
+            assert!(applied.borrow().is_empty(), "offscreen draws cannot mutate live layers");
+            root.update(cx, |view, _| view.generation = 3);
+            window.refresh();
+            window.draw(cx).clear(cx);
+            assert!(applied.borrow().is_empty());
+            window.present_if_needed();
+            assert_eq!(*applied.borrow(), vec![3], "only the replacement scene's changes may commit");
+            window.present_if_needed();
+            assert_eq!(*applied.borrow(), vec![3], "present callbacks are consumed exactly once");
+        }).unwrap();
     }
 
     #[gpui_kit::test]

@@ -1327,6 +1327,14 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn on_appearance_changed(&self, callback: Box<dyn FnMut()>);
     fn on_button_layout_changed(&self, _callback: Box<dyn FnMut()>) {}
     fn draw(&self, scene: &Scene);
+    /// Applies native layer changes with the scene that replaces them.
+    fn draw_with_updates(&self, scene: &Scene, updates: &mut Vec<Box<dyn FnOnce()>>) -> bool {
+        for update in updates.drain(..) {
+            update();
+        }
+        self.draw(scene);
+        true
+    }
     fn schedule_frame(&self) {}
     fn sprite_atlas(&self) -> Arc<dyn PlatformAtlas>;
     fn is_subpixel_rendering_supported(&self) -> bool;

@@ -1274,6 +1274,7 @@ pub struct Window {
         SingleSubscriberSet<Box<dyn FnMut(WindowVisibility, &mut Window, &mut App) -> bool>>,
     hovered: Rc<Cell<bool>>,
     pub(crate) needs_present: Rc<Cell<bool>>,
+    present_updates: Vec<Box<dyn FnOnce()>>,
     /// Tracks recent input event timestamps to determine if input is arriving at a high rate.
     /// Used to selectively enable VRR optimization only when input rate exceeds 60fps.
     pub(crate) input_rate_tracker: Rc<RefCell<InputRateTracker>>,
@@ -2396,6 +2397,7 @@ impl Window {
             visibility_observers: SingleSubscriberSet::new(),
             hovered,
             needs_present,
+            present_updates: Vec::new(),
             input_rate_tracker,
             #[cfg(feature = "profiler")]
             window_profiler: profiler::WindowProfiler::new(handle.window_id())?,
@@ -3648,6 +3650,9 @@ impl Window {
     /// the contents of the new [`Scene`], use [`Self::present`].
     #[profiling::function]
     pub fn draw(&mut self, cx: &mut App) -> ArenaClearNeeded {
+        // A draw can be superseded without ever reaching the screen (including
+        // offscreen screenshots). Its native changes must not escape separately.
+        self.present_updates.clear();
         // Drain every draw in profiler builds so a previous frame's
         // first-invalidation timestamp can't be attributed to this one.
         #[cfg(feature = "profiler")]
@@ -3827,13 +3832,25 @@ impl Window {
         self.invalidator.replace_views(views);
     }
 
+    /// Queues a native layer change for this draw's presentation. Queue from
+    /// an uncached paint callback on every draw that needs the change; a later
+    /// draw replaces pending callbacks along with the scene they accompanied.
+    pub fn defer_until_present(&mut self, update: impl FnOnce() + 'static) {
+        self.present_updates.push(Box::new(update));
+    }
+
     #[profiling::function]
     fn present(&mut self) {
         #[cfg(feature = "profiler")]
         let _foreground_turn = profiler::journal::foreground_turn();
         #[cfg(feature = "profiler")]
         let present_start = Instant::now();
-        self.platform_window.draw(&self.rendered_frame.scene);
+        let presented = if self.present_updates.is_empty() {
+            self.platform_window.draw(&self.rendered_frame.scene);
+            true
+        } else {
+            self.platform_window.draw_with_updates(&self.rendered_frame.scene, &mut self.present_updates)
+        };
         #[cfg(feature = "profiler")]
         self.window_profiler.record_present(
             present_start,
@@ -3841,12 +3858,13 @@ impl Window {
             self.active.get(),
             !self.next_frame_callbacks.borrow().is_empty(),
         );
-        self.needs_present.set(false);
+        self.needs_present.set(!presented);
+        if !presented { self.platform_window.schedule_frame(); }
         profiling::finish_frame!();
     }
 
     /// Presents the most recently drawn frame if it hasn't been presented yet.
-    #[cfg(all(test, feature = "profiler"))]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn present_if_needed(&mut self) {
         if self.needs_present.get() {
             self.present();

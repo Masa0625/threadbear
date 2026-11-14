@@ -34,6 +34,12 @@ gpui-base = { path = "vendor/gpui-base" }
 # (gpui/src/spinner.rs).
 # `has_deferred_draws` and `has_tooltip` let native arcs yield to overlays.
 gpui-pre = { path = "vendor/gpui-pre" }
+# Pair native arc layer changes with their replacement Metal scene using the
+# renderer's existing transaction presentation mode. Retain on snapshot bumps.
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
+# Preserve the existing draw API while reporting whether a drawable was
+# actually presented; failed frames cannot commit their native layer changes.
+gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
 
 # Scripted screenshots run in debug apps, often at background priority. An
 # unoptimized PNG encode stalled the app for 30 seconds (14 Nov). Optimize
