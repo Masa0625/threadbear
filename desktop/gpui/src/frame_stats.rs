@@ -130,6 +130,49 @@ fn ms(nanos: u64) -> f64 {
     (nanos as f64 / 1e4).round() / 100.
 }
 
+#[cfg(feature = "automation")]
+fn dirty_to_present_ms(now: &FrameDurationSnapshot, before: Option<&FrameDurationSnapshot>) -> Value {
+    // workMs stops before platform submission. This existing histogram runs
+    // through submission, including time blocked acquiring a Metal drawable.
+    // It measures invalidation to handoff, not the pixels reaching the display.
+    let mut durations = now.dirty_to_present_histogram.clone();
+    if before.is_some_and(|before| durations.subtract(&before.dirty_to_present_histogram).is_err()) {
+        return json!({ "error": "handoff baseline does not belong to this frame history" });
+    }
+    json!({ "samples": durations.len(),
+        "p50": ms(durations.value_at_quantile(0.5)),
+        "p90": ms(durations.value_at_quantile(0.9)),
+        "p99": ms(durations.value_at_quantile(0.99)),
+        "max": ms(durations.max()) })
+}
+
+#[cfg(all(test, feature = "automation"))]
+mod handoff_probe_tests {
+    use super::dirty_to_present_ms;
+    use gpui_kit::{WindowId, WindowProfiler};
+
+    #[test]
+    fn handoff_duration_excludes_samples_before_the_reset() {
+        let mut now = WindowProfiler::new(WindowId::from(1u64)).unwrap().frame_duration_snapshot();
+        now.dirty_to_present_histogram.record(100_000_000).unwrap();
+        let before = now.clone();
+        now.dirty_to_present_histogram.record(19_000_000).unwrap();
+        now.dirty_to_present_histogram.record(27_000_000).unwrap();
+        let report = dirty_to_present_ms(&now, Some(&before));
+        assert_eq!(report["samples"], 2);
+        assert!((report["p50"].as_f64().unwrap() - 19.).abs() < 0.05);
+        assert!((report["max"].as_f64().unwrap() - 27.).abs() < 0.05);
+    }
+
+    #[test]
+    fn a_stale_handoff_baseline_is_reported_instead_of_mixed_with_new_frames() {
+        let now = WindowProfiler::new(WindowId::from(2u64)).unwrap().frame_duration_snapshot();
+        let mut before = now.clone();
+        before.dirty_to_present_histogram.record(100_000_000).unwrap();
+        assert!(dirty_to_present_ms(&now, Some(&before))["error"].is_string());
+    }
+}
+
 /// The same displays' frames in `now`, less what `before` had of them.
 fn since(now: &FrameDurationSnapshot, before: Option<&FrameDurationSnapshot>) -> Vec<(RefreshIntervalFrames, Counts)> {
     now.by_refresh_interval
@@ -180,7 +223,7 @@ pub(crate) fn report(window: &Window, reset: bool) -> Value {
                 })
             })
             .collect();
-        json!({ "screens": screens })
+        json!({ "screens": screens, "dirtyToPresentMs": dirty_to_present_ms(&now, b.as_ref()) })
     });
     let cpu = thread_cpu_nanos();
     let mut out = out;
