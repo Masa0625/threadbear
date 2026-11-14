@@ -927,6 +927,62 @@ mod spinner_tests {
     }
 
     #[gpui_kit::test]
+    fn native_failure_fallback_cancels_the_handoff_and_redraws_even_without_arcs(cx: &mut TestAppContext) {
+        let handle = cx.open_window(size(px(100.), px(100.)), |_, _| SpinnerHost { arc: false, visible: false, clipped: false });
+        let native_visible = Rc::new(Cell::new(true));
+        let succeeded = Rc::new(Cell::new(0));
+        let failed = Rc::new(Cell::new(0));
+        cx.run_until_parked();
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.draw(cx).clear(cx);
+            let success = succeeded.clone(); let failure = failed.clone(); let visible = native_visible.clone();
+            window.defer_until_present_with_fallback(move || success.set(success.get() + 1), move || {
+                visible.set(false); failure.set(failure.get() + 1);
+            });
+            window.simulate_failed_presentations(1000);
+            assert_eq!(window.simulate_presentation(false), (false, 0), "fallback must abandon the failed native scene");
+            assert!(!native_visible.get(), "an obsolete last arc must be hidden even with no animation tick");
+            assert_eq!(failed.get(), 1);
+            window.simulate_presentation(false);
+            assert_eq!(failed.get(), 1, "a failed native scene cannot replay its fallback");
+            assert_eq!(succeeded.get(), 0, "a failed restore must not commit later");
+            window.draw(cx).clear(cx);
+            assert_eq!(window.simulate_presentation(false), (false, 0), "ordinary Rust drawing must remain possible");
+            assert_eq!(failed.get(), 1);
+        }).unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn native_failure_fallbacks_do_not_escape_a_replaced_or_successful_scene(cx: &mut TestAppContext) {
+        let handle = cx.open_window(size(px(100.), px(100.)), |_, _| SpinnerHost { arc: false, visible: false, clipped: false });
+        let applied = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let failures = Rc::new(std::cell::RefCell::new(Vec::new()));
+        cx.run_until_parked();
+        cx.update_window(handle.into(), |_, window, cx| {
+            let queue = |window: &mut Window, generation| {
+                let applied = applied.clone(); let failures = failures.clone();
+                window.defer_until_present_with_fallback(move || applied.borrow_mut().push(generation), move || failures.borrow_mut().push(generation));
+            };
+            window.draw(cx).clear(cx); queue(window, 1);
+            window.draw(cx).clear(cx); queue(window, 2);
+            window.simulate_failed_presentations(1);
+            window.simulate_presentation(false);
+            assert_eq!(*failures.borrow(), vec![2], "replaced captures must discard their fallback too");
+            assert!(applied.borrow().is_empty());
+            window.draw(cx).clear(cx); queue(window, 3);
+            window.simulate_failed_presentations(0);
+            assert_eq!(window.simulate_presentation(false), (false, 0));
+            assert_eq!(*applied.borrow(), vec![3]);
+            // A later legacy update on this same scene must keep its bounded
+            // retry semantics, without reusing generation 3's failure handler.
+            window.defer_until_present(|| {});
+            window.simulate_failed_presentations(1);
+            assert_eq!(window.simulate_presentation(true), (true, 1));
+            assert_eq!(*failures.borrow(), vec![2]);
+        }).unwrap();
+    }
+
+    #[gpui_kit::test]
     fn native_updates_wait_for_the_matching_scene_to_present(cx: &mut TestAppContext) {
         let applied = Rc::new(std::cell::RefCell::new(Vec::new()));
         let handle = cx.open_window(size(px(100.), px(100.)), |_, _| PresentProbe { generation: 1, applied: applied.clone() });

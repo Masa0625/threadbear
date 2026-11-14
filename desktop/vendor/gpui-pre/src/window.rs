@@ -1275,6 +1275,7 @@ pub struct Window {
     hovered: Rc<Cell<bool>>,
     pub(crate) needs_present: Rc<Cell<bool>>,
     present_updates: Vec<Box<dyn FnOnce()>>,
+    present_fallbacks: Vec<Box<dyn FnOnce()>>,
     present_failures: u8,
     /// Tracks recent input event timestamps to determine if input is arriving at a high rate.
     /// Used to selectively enable VRR optimization only when input rate exceeds 60fps.
@@ -2399,6 +2400,7 @@ impl Window {
             hovered,
             needs_present,
             present_updates: Vec::new(),
+            present_fallbacks: Vec::new(),
             present_failures: 0,
             input_rate_tracker,
             #[cfg(feature = "profiler")]
@@ -3655,6 +3657,7 @@ impl Window {
         // A draw can be superseded without ever reaching the screen (including
         // offscreen screenshots). Its native changes must not escape separately.
         self.present_updates.clear();
+        self.present_fallbacks.clear();
         self.present_failures = 0;
         // Drain every draw in profiler builds so a previous frame's
         // first-invalidation timestamp can't be attributed to this one.
@@ -3842,6 +3845,21 @@ impl Window {
         self.present_updates.push(Box::new(update));
     }
 
+    /// Queue a native change with a fallback if this scene cannot be submitted.
+    ///
+    /// A failure abandons this scene's native changes, runs its fallbacks once,
+    /// and requests a fresh draw. Use this for decorative native content that
+    /// can hide itself and switch to drawing in GPUI after a submission error.
+    /// Callbacks for a superseded draw or a successful present are discarded.
+    pub fn defer_until_present_with_fallback(
+        &mut self,
+        update: impl FnOnce() + 'static,
+        fallback: impl FnOnce() + 'static,
+    ) {
+        self.defer_until_present(update);
+        self.present_fallbacks.push(Box::new(fallback));
+    }
+
     #[profiling::function]
     fn present(&mut self) {
         #[cfg(feature = "profiler")]
@@ -3861,6 +3879,20 @@ impl Window {
             self.active.get(),
             !self.next_frame_callbacks.borrow().is_empty(),
         );
+        if presented {
+            self.present_fallbacks.clear();
+        } else if !self.present_fallbacks.is_empty() {
+            // A fallback may already have hidden native decoration. Never let
+            // a later retry resurrect this scene's abandoned native changes.
+            self.present_updates.clear();
+            for fallback in self.present_fallbacks.drain(..) { fallback(); }
+            self.needs_present.set(false);
+            self.present_failures = 0;
+            self.refresh();
+            self.platform_window.schedule_frame();
+            profiling::finish_frame!();
+            return;
+        }
         self.present_failures = if presented { 0 } else { self.present_failures.saturating_add(1) };
         // A missing drawable usually recovers on the next frame. A persistent
         // GPU error must not turn an idle window into a full-rate retry loop.
