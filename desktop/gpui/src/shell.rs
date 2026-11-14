@@ -1435,6 +1435,14 @@ impl Threadbear {
         self.tour_watch(window, cx);
         let has_rail = self.pane_thread().is_some();
         let rail = has_rail.then(|| self.render_right_rail(cx));
+        // Benchmark-only control. Native placement and dirty-child behavior
+        // must be checked before this can become the normal rendering path.
+        let cache_dock = cfg!(feature = "automation") && {
+            static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            *ENABLED.get_or_init(|| std::env::var("TB_PERF_CACHE_DOCK").as_deref() == Ok("on"))
+        };
+        let dock = AnyView::from(self.dock_view.clone())
+            .when(cache_dock, |view| view.cached(StyleRefinement::default().size_full()));
         let root = div()
             .id("threadbear-shell")
             .track_focus(&self.root_focus)
@@ -1454,7 +1462,7 @@ impl Threadbear {
             .child(self.page_swipe_watch(cx))
             .child(self.row_press_watch(cx))
             .child(self.render_activity_bar(window, cx))
-            .child(div().relative().flex_1().min_w_0().h_full().child(self.dock_view.clone()).child(crate::tour::dock_origin_mark()))
+            .child(div().relative().flex_1().min_w_0().h_full().child(dock).child(crate::tour::dock_origin_mark()))
             .when_some(rail, |s, r| s.child(r))
             // An archived or hibernated thread's page on its way to its
             // heading, over the sidebar and the panel alike (archive_flight.rs).
