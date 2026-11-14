@@ -24,6 +24,7 @@ const SAMPLE_EVERY: Duration = Duration::from_millis(500);
 struct Baseline {
     window: WindowId,
     frames: FrameDurationSnapshot,
+    input: InputLatencySnapshot,
     cpu: u64,
 }
 
@@ -157,9 +158,27 @@ fn dirty_to_present_ms(now: &FrameDurationSnapshot, before: Option<&FrameDuratio
         "max": (samples > 0).then(|| ms(durations.max())) })
 }
 
+#[cfg(feature = "automation")]
+fn input_to_handoff_ms(now: &InputLatencySnapshot, before: Option<&InputLatencySnapshot>) -> Value {
+    // Only frames responding to input, so timer-only animation frames cannot
+    // dilute a scroll comparison. Starts when GPUI handles the first input,
+    // excluding time queued before dispatch, and ends at platform submission.
+    // This is neither event-post-to-frame latency nor pointer-to-glass latency.
+    let mut durations = now.latency_histogram.clone();
+    if before.is_some_and(|before| durations.subtract(&before.latency_histogram).is_err()) {
+        return json!({ "error": "input baseline does not belong to this frame history" });
+    }
+    let samples = durations.len();
+    json!({ "samples": samples,
+        "p50": (samples > 0).then(|| ms(durations.value_at_quantile(0.5))),
+        "p90": (samples > 0).then(|| ms(durations.value_at_quantile(0.9))),
+        "p99": (samples > 0).then(|| ms(durations.value_at_quantile(0.99))),
+        "max": (samples > 0).then(|| ms(durations.max())) })
+}
+
 #[cfg(all(test, feature = "automation"))]
 mod handoff_probe_tests {
-    use super::{dirty_to_present_ms, report, BASELINE};
+    use super::{dirty_to_present_ms, input_to_handoff_ms, report, BASELINE};
     use gpui_kit::{div, size, Context, IntoElement, Render, TestAppContext, Window, WindowId, WindowProfiler};
 
     #[test]
@@ -200,6 +219,27 @@ mod handoff_probe_tests {
         let report = dirty_to_present_ms(&now, None);
         assert_eq!(report["samples"], 0);
         for field in ["p50", "p90", "p99", "max"] { assert!(report[field].is_null(), "{field}"); }
+    }
+
+    #[test]
+    fn input_handoff_uses_only_input_samples_after_the_reset() {
+        let mut now = WindowProfiler::new(WindowId::from(5u64)).unwrap().input_latency_snapshot();
+        now.latency_histogram.record(100_000_000).unwrap();
+        let before = now.clone();
+        now.latency_histogram.record(19_000_000).unwrap();
+        now.latency_histogram.record(27_000_000).unwrap();
+        let report = input_to_handoff_ms(&now, Some(&before));
+        assert_eq!(report["samples"], 2);
+        assert!((report["p50"].as_f64().unwrap() - 19.).abs() < 0.05);
+        assert!((report["max"].as_f64().unwrap() - 27.).abs() < 0.05);
+    }
+
+    #[test]
+    fn no_input_handoff_samples_are_not_zero_latency() {
+        let now = WindowProfiler::new(WindowId::from(6u64)).unwrap().input_latency_snapshot();
+        let report = input_to_handoff_ms(&now, None);
+        assert_eq!(report["samples"], 0);
+        assert!(report["p50"].is_null());
     }
 
     struct Blank;
@@ -261,6 +301,7 @@ pub(crate) fn report(window: &Window, reset: bool) -> Value {
         return json!({ "error": "frame-stats was reset on another window; reset this window before sampling" });
     }
     let now = window.frame_duration_snapshot();
+    let input = window.input_latency_snapshot();
     let out = BASELINE.with(|b| {
         let b = b.borrow();
         let before = b.as_ref().filter(|b| b.window == id).map(|b| &b.frames);
@@ -280,7 +321,9 @@ pub(crate) fn report(window: &Window, reset: bool) -> Value {
                 })
             })
             .collect();
-        json!({ "screens": screens, "dirtyToPresentMs": dirty_to_present_ms(&now, before) })
+        let input_before = b.as_ref().filter(|b| b.window == id).map(|b| &b.input);
+        json!({ "screens": screens, "dirtyToPresentMs": dirty_to_present_ms(&now, before),
+            "inputHandledToHandoffMs": input_to_handoff_ms(&input, input_before) })
     });
     let cpu = thread_cpu_nanos();
     let mut out = out;
@@ -289,7 +332,7 @@ pub(crate) fn report(window: &Window, reset: bool) -> Value {
     let cpu_before = BASELINE.with(|b| b.borrow().as_ref().filter(|b| b.window == id).map_or(0, |b| b.cpu));
     out["mainCpuMs"] = json!(ms(cpu.saturating_sub(cpu_before)));
     if reset {
-        BASELINE.with(|b| *b.borrow_mut() = Some(Baseline { window: id, frames: now, cpu }));
+        BASELINE.with(|b| *b.borrow_mut() = Some(Baseline { window: id, frames: now, input, cpu }));
     }
     out
 }

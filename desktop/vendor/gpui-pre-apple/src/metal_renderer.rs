@@ -512,6 +512,13 @@ impl MetalRenderer {
         }
     }
 
+    /// Whether this display-link callback already supplied a drawable. Native
+    /// layer updates can use it in their transaction instead of blocking for
+    /// a second drawable from the layer.
+    pub fn has_frame_drawable(&self) -> bool {
+        matches!(&self.display_link_mode, DisplayLinkMode::Attached { drawable: Some(_) })
+    }
+
     /// Record whether a `CAMetalDisplayLink` drives the layer. While one
     /// does, frames are drawn only into the drawables it hands out.
     pub fn set_display_link_attached(&mut self, attached: bool) {
@@ -2027,6 +2034,7 @@ mod tests {
             .context("window renderer must supply a drawable")?;
 
         renderer.set_display_link_attached(true);
+        assert!(!renderer.has_frame_drawable());
         assert!(matches!(
             renderer.display_link_mode,
             DisplayLinkMode::Attached { drawable: None }
@@ -2040,7 +2048,9 @@ mod tests {
             renderer.display_link_mode,
             DisplayLinkMode::Attached { drawable: Some(_) }
         ));
+        assert!(renderer.has_frame_drawable());
         renderer.draw(&Scene::default());
+        assert!(!renderer.has_frame_drawable());
         assert!(matches!(
             renderer.display_link_mode,
             DisplayLinkMode::Attached { drawable: None }
@@ -2052,9 +2062,11 @@ mod tests {
                 .is_none()
         );
         assert!(renderer.set_frame_drawable(None).is_some());
+        assert!(!renderer.has_frame_drawable());
 
         renderer.set_frame_drawable(Some(drawable));
         renderer.set_display_link_attached(false);
+        assert!(!renderer.has_frame_drawable());
         assert!(matches!(
             renderer.display_link_mode,
             DisplayLinkMode::Detached
