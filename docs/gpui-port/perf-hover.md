@@ -34,6 +34,9 @@ pane as well as the list.
   time. `hover-ab.ts` runs two builds turn about. Wall-clock latency on
   Tinker swings two to three times between runs of the same build while
   other threads build there, so compare main-thread CPU per hover first.
+  The probe shares the platform-guarded CPU clock in `frame_stats.rs`.
+  Non-Unix builds return zero for this counter; the CPU figures here are
+  measurements on the Mac.
 - The mock's big set (`TB_MOCK_PERF_PROJECTS=1400`) now carries real-sized
   summaries: with 0.5 KB ones the copying didn't show.
 
