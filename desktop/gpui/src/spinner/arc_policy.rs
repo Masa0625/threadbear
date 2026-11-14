@@ -208,4 +208,13 @@ mod tests {
             expect_rust(&d); assert!(d.update.is_none()); assert_eq!(state.retry_at, retry);
         }
     }
+    #[test]
+    fn repeated_failures_cap_the_cooldown_at_two_seconds() {
+        let now = Instant::now(); let mut state = State::default();
+        for n in 0..8 {
+            let at = now + Duration::from_secs(n * 5);
+            state.failed(at);
+            assert_eq!(state.retry_at.unwrap().duration_since(at), Duration::from_millis(match n { 0 => 500, 1 => 1000, _ => 2000 }));
+        }
+    }
 }

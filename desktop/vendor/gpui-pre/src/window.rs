@@ -3850,7 +3850,7 @@ impl Window {
     /// A failure abandons this scene's native changes, runs its fallbacks once,
     /// and requests a fresh draw. Use this for decorative native content that
     /// can hide itself and switch to drawing in GPUI after a submission error.
-    /// Callbacks for a superseded draw or a successful present are discarded.
+    /// Fallbacks for a superseded draw or a successful present are discarded.
     pub fn defer_until_present_with_fallback(
         &mut self,
         update: impl FnOnce() + 'static,
@@ -3915,6 +3915,12 @@ impl Window {
     #[cfg(any(test, feature = "test-support"))]
     pub fn simulate_failed_presentations(&mut self, count: usize) {
         self.platform_window.as_test().expect("test platform window").0.lock().presentations_to_fail = count;
+    }
+
+    /// Whether a fresh draw is pending, for renderer recovery tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn simulated_refresh_pending(&self) -> bool {
+        self.invalidator.is_dirty()
     }
 
     /// Simulates a platform presentation request; returns remaining presentation

@@ -7,6 +7,14 @@ publish = false
 # `cargo run` means the app, not its web helper.
 default-run = "threadbear-gpui"
 
+# AppKit view/layer ownership requires the actual process main thread. This
+# uses GPUI's fake window plus unattached NSViews, never a screen window.
+[[test]]
+name = "native_arc_hosts"
+path = "tests/native_arc_hosts.rs"
+harness = false
+required-features = ["automation", "frame-stats"]
+
 [[bin]]
 name = "threadbear-gpui"
 path = "src/main.rs"

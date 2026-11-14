@@ -2,6 +2,29 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
 
+#ifdef TB_ARC_TEST
+// Unattached views only: the main-thread Rust integration test opens no
+// NSWindow or NSApplication and never takes over a screen.
+void *tb_arc_probe_test_view_create(void) {
+    NSCAssert(NSThread.isMainThread, @"arc fixture on main");
+    NSView *view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 600, 400)];
+    view.wantsLayer = YES;
+    CAMetalLayer *metal = [CAMetalLayer layer];
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
+    metal.colorspace = space;
+    CGColorSpaceRelease(space);
+    view.layer = metal;
+    return (__bridge_retained void *)view;
+}
+uint32_t tb_arc_probe_test_view_layer_count(void *pointer) {
+    return (uint32_t)((__bridge NSView *)pointer).layer.sublayers.count;
+}
+void tb_arc_probe_test_view_drop(void *pointer) {
+    NSView *view = (__bridge_transfer NSView *)pointer;
+    (void)view;
+}
+#endif
+
 typedef struct {
     float center_x, center_y, side, radius, width;
     float clip_x, clip_y, clip_w, clip_h;
