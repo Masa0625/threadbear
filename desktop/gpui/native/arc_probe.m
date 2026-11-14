@@ -19,6 +19,15 @@ void *tb_arc_probe_test_view_create(void) {
 uint32_t tb_arc_probe_test_view_layer_count(void *pointer) {
     return (uint32_t)((__bridge NSView *)pointer).layer.sublayers.count;
 }
+uint32_t tb_arc_probe_test_clip_count(void *pointer) {
+    CALayer *host = ((__bridge NSView *)pointer).layer.sublayers.firstObject;
+    return (uint32_t)host.sublayers.count;
+}
+double tb_arc_probe_test_model_period(void *pointer) {
+    CALayer *host = ((__bridge NSView *)pointer).layer.sublayers.firstObject;
+    CALayer *ring = host.sublayers.firstObject.sublayers.firstObject;
+    return [ring animationForKey:@"turn"].duration;
+}
 void tb_arc_probe_test_view_drop(void *pointer) {
     NSView *view = (__bridge_transfer NSView *)pointer;
     (void)view;

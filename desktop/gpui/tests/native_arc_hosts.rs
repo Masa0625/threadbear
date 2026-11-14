@@ -17,19 +17,24 @@ mod mac {
     unsafe extern "C" {
         fn tb_arc_probe_test_view_create() -> *mut c_void;
         fn tb_arc_probe_test_view_layer_count(view: *mut c_void) -> u32;
+        fn tb_arc_probe_test_clip_count(view: *mut c_void) -> u32;
+        fn tb_arc_probe_test_model_period(view: *mut c_void) -> f64;
         fn tb_arc_probe_test_view_drop(view: *mut c_void);
     }
     struct View(*mut c_void);
     impl View {
         fn new() -> Self { let view = Self(unsafe { tb_arc_probe_test_view_create() }); assert!(!view.0.is_null()); view }
         fn layers(&self) -> u32 { unsafe { tb_arc_probe_test_view_layer_count(self.0) } }
+        fn clips(&self) -> u32 { unsafe { tb_arc_probe_test_clip_count(self.0) } }
+        fn period(&self) -> f64 { unsafe { tb_arc_probe_test_model_period(self.0) } }
     }
     impl Drop for View { fn drop(&mut self) { unsafe { tb_arc_probe_test_view_drop(self.0); } } }
     struct Blank;
     impl Render for Blank {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement { div().size_full() }
     }
-    fn phase() -> f64 { 0.25 }
+    thread_local! { static PHASE_CALLS: Cell<u32> = const { Cell::new(0) }; }
+    fn phase() -> f64 { PHASE_CALLS.with(|n| n.set(n.get() + 1)); 0.25 }
     fn specs() -> Vec<Spec> {
         [20., 80.].into_iter().map(|y| Spec { center_x: 40., center_y: y, side: 12., radius: 4.5, width: 1.6,
             clip_x: 0., clip_y: 0., clip_w: 600., clip_h: 400., r: 0.1, g: 0.5, b: 0.8, a: 0.8 }).collect()
@@ -47,9 +52,23 @@ mod mac {
         cx.run_until_parked(); let id = window.window_id(); let now = Instant::now(); let specs = specs();
         assert!(!prepare(&hosts, id, &specs, now, Some(&view)).0);
         let (native, update) = prepare(&hosts, id, &specs, now + Duration::from_millis(150), Some(&view));
-        assert!(native); hosts.borrow_mut().apply(update.unwrap(), phase(), PERIOD);
+        assert!(native);
+        PHASE_CALLS.with(|n| n.set(0));
+        cx.update_window(window.into(), |_, window, cx| {
+            window.draw(cx).clear(cx);
+            native_hosts::queue_update(&hosts, update.unwrap(), window, phase, PERIOD, move || now);
+            window.simulate_failed_presentations(0);
+            assert_eq!(window.simulate_presentation(false), (false, 0));
+        }).unwrap();
+        assert_eq!(PHASE_CALLS.with(|n| n.get()), 1, "successful queue must compute the current phase");
         assert_eq!(report(&hosts, id)["placed"], 2);
+        assert_eq!(report(&hosts, id)["visible"], 2);
+        assert_eq!(report(&hosts, id)["animating"], 2);
+        assert_eq!(report(&hosts, id)["lifetimeAppliedUpdates"], 1);
+        assert_eq!(report(&hosts, id)["lifetimeNativeFailures"], 0);
         assert_eq!(view.layers(), 1);
+        assert_eq!(view.clips(), 2, "inspect the actual layer tree as well as the probe array");
+        assert_eq!(view.period(), PERIOD);
         let at = now + Duration::from_millis(200);
         let (native, hide) = prepare(&hosts, id, &[], at, Some(&view));
         assert!(!native);
@@ -57,14 +76,18 @@ mod mac {
             window.draw(cx).clear(cx);
             native_hosts::queue_update(&hosts, hide.unwrap(), window, phase, PERIOD, move || at);
             window.simulate_failed_presentations(1000);
+            assert!(!window.simulated_refresh_pending(), "start the failure with a clean frame");
             assert_eq!(window.simulate_presentation(false), (false, 0));
             assert!(window.simulated_refresh_pending(), "failed last hide must request a fresh frame");
             assert_eq!(report(&hosts, id)["placed"], 0, "the real CA layers must be gone, not merely marked gone");
             assert_eq!(report(&hosts, id)["visible"], 0);
+            assert_eq!(view.clips(), 0, "the CA tree must actually be empty");
             assert_eq!(report(&hosts, id)["lifetimeNativeFailures"], 1);
             // Failure and success handlers cannot run again on this old scene.
+            window.simulate_failed_presentations(0);
             window.simulate_presentation(true);
             assert_eq!(report(&hosts, id)["placed"], 0);
+            assert_eq!(report(&hosts, id)["lifetimeAppliedUpdates"], 1, "abandoned callbacks must not replay even after recovery");
         }).unwrap();
         assert!(prepare(&hosts, id, &[], at + Duration::from_millis(20), Some(&view)).1.is_none());
         hosts.borrow_mut().remove(id);

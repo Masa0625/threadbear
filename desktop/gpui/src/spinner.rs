@@ -712,6 +712,7 @@ mod spinner_tests {
                 visible.set(false); failure.set(failure.get() + 1);
             });
             window.simulate_failed_presentations(1000);
+            assert!(!window.simulated_refresh_pending(), "start the failure with a clean frame");
             assert_eq!(window.simulate_presentation(false), (false, 0), "fallback must abandon the failed native scene");
             assert!(window.simulated_refresh_pending(), "fallback must request a fresh draw without an arc timer");
             assert!(!native_visible.get(), "an obsolete last arc must be hidden even with no animation tick");
