@@ -26,7 +26,7 @@ import { GpuiDriver } from '../support/gpui.ts';
 import { sleep } from '../support/driver.ts';
 import { assertInFront, swiftTool, windowFrame, work } from './real-screen.ts';
 import { ensurePerfLock } from './perf-lock.ts';
-import { handoffMetrics, type HandoffHistogram, type HandoffMetrics } from './render-metrics.ts';
+import { renderRow, type RenderStats as Stats, type RenderRow as Row } from './render-metrics.ts';
 
 // One measurement or perf build on the host at a time (perf-lock.ts).
 await ensurePerfLock();
@@ -55,38 +55,21 @@ process.env.TB_MOCK_DECISIONS ??= '1';
 const gesture = swiftTool('post-gesture');
 const dragger = swiftTool('realdrag');
 
-type Screen = { hz: number; presented: number; late: number; missedRefreshes: number; workMs: Record<string, number> };
-type Stats = { screens: Screen[]; mainCpuMs: number; dirtyToPresentMs?: HandoffHistogram };
-type Row = { scenario: string; load: boolean; frames: number; late: number; p50: number; p90: number; p99: number; max: number; cpuMs: number; cpuPerFrame: number; cpuPerSecond?: number } & HandoffMetrics;
 const results: Row[] = [];
 
 function record(scenario: string, load: boolean, stats: Stats, seconds?: number) {
-  // The screen it drew most of the frames on.
-  const s = [...stats.screens].sort((a, b) => b.presented - a.presented)[0];
-  if (!s) {
+  const row = renderRow(scenario, load, stats, seconds);
+  if (!row) {
     console.log(`${scenario}${load ? ' (loaded)' : ''}: no frames recorded`);
     return;
   }
-  const row: Row = {
-    scenario,
-    load,
-    frames: s.presented,
-    late: s.late,
-    p50: s.workMs.p50,
-    p90: s.workMs.p90,
-    p99: s.workMs.p99,
-    max: s.workMs.max,
-    cpuMs: stats.mainCpuMs,
-    cpuPerFrame: Math.round((100 * stats.mainCpuMs) / Math.max(1, s.presented)) / 100,
-    ...(seconds ? { cpuPerSecond: Math.round(stats.mainCpuMs / seconds) } : {}),
-    ...handoffMetrics(stats),
-  };
+  if (row.dirtyToPresentError) console.warn(`${scenario}: handoff unavailable: ${row.dirtyToPresentError}`);
   results.push(row);
   const pct = Math.round((100 * row.late) / Math.max(1, row.frames));
-  const handoff = row.dirtyToPresentSamples == null ? '; invalidation->handoff unavailable'
-    : `; invalidation->handoff ms p50 ${row.dirtyToPresentP50} p90 ${row.dirtyToPresentP90} p99 ${row.dirtyToPresentP99} max ${row.dirtyToPresentMax} (${row.dirtyToPresentSamples} samples)`;
+  const handoff = row.dirtyToPresentP50 == null ? '; invalidation->handoff unavailable'
+    : `; window-wide invalidation->handoff ms p50 ${row.dirtyToPresentP50} p90 ${row.dirtyToPresentP90} p99 ${row.dirtyToPresentP99} max ${row.dirtyToPresentMax} (${row.dirtyToPresentSamples} samples)`;
   console.log(
-    `${scenario}${load ? ' (loaded)' : ''}: ${row.frames} frames at ${s.hz} Hz, ${row.late} late (${pct}%); work ms p50 ${row.p50} p90 ${row.p90} p99 ${row.p99} max ${row.max}; main thread ${row.cpuMs} ms CPU, ${row.cpuPerFrame} a frame${handoff}`,
+    `${scenario}${load ? ' (loaded)' : ''}: ${row.frames} frames at ${row.hz} Hz (busiest of ${row.screenCount} screen intervals), ${row.late} late (${pct}%); work ms p50 ${row.p50} p90 ${row.p90} p99 ${row.p99} max ${row.max}; main thread ${row.cpuMs} ms CPU, ${row.cpuPerFrame} a frame${handoff}`,
   );
 }
 

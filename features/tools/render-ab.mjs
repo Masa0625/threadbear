@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensurePerfLock } from './perf-lock.ts';
-import { handoffFields, formatMetric } from './render-metrics.ts';
+import { comparisonTable } from './render-metrics.ts';
 
 // Held for every run; the runs it starts inherit it (perf-lock.ts).
 await ensurePerfLock();
@@ -34,24 +34,6 @@ for (let r = 0; r < Number(rounds); r += 1) {
     if (line) runs[name].push(...JSON.parse(line.slice(8)));
   }
 }
-const median = (xs) => {
-  const s = [...xs].sort((p, q) => p - q);
-  return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : NaN;
-};
-const keys = [...new Set(Object.values(runs).flat().map((r) => `${r.scenario}${r.load ? ' loaded' : ''}`))];
-const fields = ['late%', 'p50', 'p90', 'p99', 'cpuPerFrame', 'cpuPerSecond', ...handoffFields];
-const pick = (rows, f) => rows.map((r) => (f === 'late%' ? (100 * r.late) / Math.max(1, r.frames) : r[f])).filter((v) => typeof v === 'number' && Number.isFinite(v));
-console.log(`\nMedians over ${rounds} rounds each (${names.map((n, i) => `${n}: ${bins[i]}`).join(', ')}); each one's share of A's in brackets`);
-for (const k of keys) {
-  const of = (name) => runs[name].filter((r) => `${r.scenario}${r.load ? ' loaded' : ''}` === k);
-  console.log(`  ${k}`);
-  for (const f of fields) {
-    const a = median(pick(of('A'), f));
-    const cells = names.map((n) => {
-      const v = median(pick(of(n), f));
-      return formatMetric(v, n === 'A' ? undefined : a);
-    });
-    console.log(`    ${f.padEnd(12)} ${cells.join('  ')}`);
-  }
-}
+console.log(`\n${names.map((n, i) => `${n}: ${bins[i]}`).join('  ')}`);
+console.log(comparisonTable(runs, Number(rounds)));
 console.log(`\nAB ${JSON.stringify(runs)}`);
