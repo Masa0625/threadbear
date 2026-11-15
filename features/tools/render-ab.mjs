@@ -23,13 +23,14 @@ const names = bins.map((_, i) => String.fromCharCode(65 + i));
 const runs = Object.fromEntries(names.map((n) => [n, []]));
 for (let r = 0; r < Number(rounds); r += 1) {
   for (const [name, bin] of names.map((n, i) => [n, bins[i]])) {
+    process.stdout.write(`\n[${name} round ${r + 1}]\n`);
     let out = '';
     try {
       out = execFileSync(process.execPath, [path.join(here, 'render-perf.ts'), ...extra], { env: { ...process.env, TB_GPUI_BIN: bin }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
     } catch (e) {
       out = String(e.stdout ?? '');
     }
-    process.stdout.write(`\n[${name} round ${r + 1}]\n${out.split('\n').filter((l) => !l.startsWith('RESULTS')).join('\n')}`);
+    process.stdout.write(`${out.split('\n').filter((l) => !l.startsWith('RESULTS')).join('\n')}`);
     const line = out.split('\n').find((l) => l.startsWith('RESULTS '));
     if (line) runs[name].push(...JSON.parse(line.slice(8)));
   }

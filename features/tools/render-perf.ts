@@ -63,10 +63,10 @@ function record(scenario: string, load: boolean, stats: Stats, seconds?: number)
     console.log(`${scenario}${load ? ' (loaded)' : ''}: no frames recorded`);
     return;
   }
-  if (row.dirtyToPresentError) console.warn(`${scenario}: handoff unavailable: ${row.dirtyToPresentError}`);
+  if (row.dirtyToPresentError) console.warn(`${scenario}${load ? ' (loaded)' : ''}: handoff unavailable: ${row.dirtyToPresentError}`);
   results.push(row);
   const pct = Math.round((100 * row.late) / Math.max(1, row.frames));
-  const handoff = row.dirtyToPresentP50 == null ? '; invalidation->handoff unavailable'
+  const handoff = row.dirtyToPresentP50 == null ? (row.dirtyToPresentSamples === 0 ? '; invalidation->handoff unavailable (0 samples)' : '; invalidation->handoff unavailable')
     : `; window-wide invalidation->handoff ms p50 ${row.dirtyToPresentP50} p90 ${row.dirtyToPresentP90} p99 ${row.dirtyToPresentP99} max ${row.dirtyToPresentMax} (${row.dirtyToPresentSamples} samples)`;
   console.log(
     `${scenario}${load ? ' (loaded)' : ''}: ${row.frames} frames at ${row.hz} Hz (busiest of ${row.screenCount} screen intervals), ${row.late} late (${pct}%); work ms p50 ${row.p50} p90 ${row.p90} p99 ${row.p99} max ${row.max}; main thread ${row.cpuMs} ms CPU, ${row.cpuPerFrame} a frame${handoff}`,

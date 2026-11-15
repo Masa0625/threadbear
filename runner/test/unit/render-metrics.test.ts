@@ -10,7 +10,8 @@ test('actual rows and comparison output retain delay excluded from CPU and work 
   const a = {...b, dirtyToPresentP90: 20};
   const table = comparisonTable({A: [a], B: [b]}, 3);
   assert.match(table, /dirtyToPresentP90\s+20\.00 \[1\/3\]\s+31\.00 \(1\.55\) \[1\/3\]/);
-  assert.match(table, /dirtyToPresentSamples\s+100\.00/);
+  assert.match(table, /dirtyToPresentSamples\s+100 \[1\/3\]/);
+  assert.doesNotMatch(table, /cpuPerSecond/);
   assert.equal(renderRow('inbox', false, {screens: [], mainCpuMs: 0}), null);
 });
 
@@ -31,6 +32,14 @@ test('timer errors preserve CPU and work rows and keep the producer diagnostic',
   const bad = renderRow('transcript', false, {...stats(), dirtyToPresentMs: {error: 'baseline histogram is incompatible'}})!;
   assert.equal(bad.cpuMs, 5); assert.equal(bad.p90, 3); assert.equal(bad.dirtyToPresentP90, undefined);
   assert.match(bad.dirtyToPresentError!, /baseline histogram is incompatible/);
+  for (const samples of [-1, 1.5, Number.NaN]) {
+    const r = renderRow('transcript', false, {...stats(), dirtyToPresentMs: {samples, p50: 1, p90: 2, p99: 3, max: 4}})!;
+    assert.equal(r.cpuMs, 5); assert.match(r.dirtyToPresentError!, /Invalid handoff sample/);
+  }
+  for (const raw of ['bad histogram', 10, false, []]) {
+    const r = renderRow('transcript', false, {...stats(), dirtyToPresentMs: raw})!;
+    assert.equal(r.cpuMs, 5); assert.match(r.dirtyToPresentError!, /Invalid handoff histogram/);
+  }
   for (const value of [null, Number.NaN, Number.POSITIVE_INFINITY, -1]) {
     const r = renderRow('transcript', false, {...stats(), dirtyToPresentMs: {samples: 10, p50: 1, p90: value, p99: 3, max: 4}})!;
     assert.equal(r.cpuMs, 5); assert.match(r.dirtyToPresentError!, /Invalid handoff/);

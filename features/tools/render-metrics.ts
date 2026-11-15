@@ -4,12 +4,14 @@ export const handoffFields = ['dirtyToPresentP50', 'dirtyToPresentP90', 'dirtyTo
 export type HandoffMetrics = Partial<Record<typeof handoffFields[number], number>> & {dirtyToPresentSamples?: number; dirtyToPresentScope?: 'window'; dirtyToPresentError?: string};
 export type HandoffHistogram = {samples: number; p50: number | null; p90: number | null; p99: number | null; max: number | null};
 
-export function handoffMetrics(stats: {dirtyToPresentMs?: HandoffHistogram | {error: string}}): HandoffMetrics {
-  const h = stats.dirtyToPresentMs;
-  if (!h) return {};
+export function handoffMetrics(stats: {dirtyToPresentMs?: unknown}): HandoffMetrics {
+  const raw = stats.dirtyToPresentMs;
   const error = (message: string): HandoffMetrics => ({dirtyToPresentScope: 'window', dirtyToPresentError: message});
-  if ('error' in h) return error(h.error);
-  if (!Number.isSafeInteger(h.samples) || h.samples < 0) return error('Invalid handoff sample count');
+  if (raw == null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) return error('Invalid handoff histogram');
+  const h = raw as Partial<HandoffHistogram> & {error?: unknown};
+  if ('error' in h) return error(typeof h.error === 'string' ? h.error : 'Invalid handoff error');
+  if (typeof h.samples !== 'number' || !Number.isSafeInteger(h.samples) || h.samples < 0) return error('Invalid handoff sample count');
   if (h.samples === 0) return {dirtyToPresentScope: 'window', dirtyToPresentSamples: 0};
   if ([h.p50, h.p90, h.p99, h.max].some(n => n == null || !Number.isFinite(n) || n < 0)) {
     return error('Invalid handoff quantiles');
@@ -24,7 +26,7 @@ export function formatMetric(value: number, baseline?: number): string {
 }
 
 export type RenderScreen = {hz: number; presented: number; late: number; missedRefreshes: number; workMs: Record<string, number>};
-export type RenderStats = {screens: RenderScreen[]; mainCpuMs: number; dirtyToPresentMs?: HandoffHistogram | {error: string}};
+export type RenderStats = {screens: RenderScreen[]; mainCpuMs: number; dirtyToPresentMs?: unknown};
 export type RenderRow = {scenario: string; load: boolean; hz: number; screenCount: number; frames: number; late: number; p50: number; p90: number; p99: number; max: number; cpuMs: number; cpuPerFrame: number; cpuPerSecond?: number} & HandoffMetrics;
 
 export function renderRow(scenario: string, load: boolean, stats: RenderStats, seconds?: number): RenderRow | null {
@@ -49,10 +51,13 @@ export function comparisonTable(runs: Record<string, RenderRow[]>, rounds: numbe
     lines.push(`  ${k}`);
     const rows = (name: string) => runs[name].filter(r => key(r) === k);
     for (const field of fields) {
+      if (field === 'cpuPerSecond' && names.every(name => pick(rows(name), field).length === 0)) continue;
       const baseline = median(pick(rows('A'), field));
       const cells = names.map(name => {
         const values = pick(rows(name), field);
-        return `${formatMetric(median(values), name === 'A' ? undefined : baseline)} [${values.length}/${rounds}]`;
+        const value = median(values);
+        const text = field === 'dirtyToPresentSamples' ? (Number.isFinite(value) ? String(value) : 'n/a') : formatMetric(value, name === 'A' ? undefined : baseline);
+        return `${text} [${values.length}/${rounds}]`;
       });
       lines.push(`    ${field.padEnd(width)} ${cells.join('  ')}`);
     }
