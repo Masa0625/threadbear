@@ -26,6 +26,7 @@ import { GpuiDriver } from '../support/gpui.ts';
 import { sleep } from '../support/driver.ts';
 import { assertInFront, swiftTool, windowFrame, work } from './real-screen.ts';
 import { ensurePerfLock } from './perf-lock.ts';
+import { handoffMetrics, type HandoffHistogram, type HandoffMetrics } from './render-metrics.ts';
 
 // One measurement or perf build on the host at a time (perf-lock.ts).
 await ensurePerfLock();
@@ -55,8 +56,8 @@ const gesture = swiftTool('post-gesture');
 const dragger = swiftTool('realdrag');
 
 type Screen = { hz: number; presented: number; late: number; missedRefreshes: number; workMs: Record<string, number> };
-type Stats = { screens: Screen[]; mainCpuMs: number };
-type Row = { scenario: string; load: boolean; frames: number; late: number; p50: number; p90: number; p99: number; max: number; cpuMs: number; cpuPerFrame: number; cpuPerSecond?: number };
+type Stats = { screens: Screen[]; mainCpuMs: number; dirtyToPresentMs?: HandoffHistogram };
+type Row = { scenario: string; load: boolean; frames: number; late: number; p50: number; p90: number; p99: number; max: number; cpuMs: number; cpuPerFrame: number; cpuPerSecond?: number } & HandoffMetrics;
 const results: Row[] = [];
 
 function record(scenario: string, load: boolean, stats: Stats, seconds?: number) {
@@ -78,11 +79,14 @@ function record(scenario: string, load: boolean, stats: Stats, seconds?: number)
     cpuMs: stats.mainCpuMs,
     cpuPerFrame: Math.round((100 * stats.mainCpuMs) / Math.max(1, s.presented)) / 100,
     ...(seconds ? { cpuPerSecond: Math.round(stats.mainCpuMs / seconds) } : {}),
+    ...handoffMetrics(stats),
   };
   results.push(row);
   const pct = Math.round((100 * row.late) / Math.max(1, row.frames));
+  const handoff = row.dirtyToPresentSamples == null ? '; invalidation->handoff unavailable'
+    : `; invalidation->handoff ms p50 ${row.dirtyToPresentP50} p90 ${row.dirtyToPresentP90} p99 ${row.dirtyToPresentP99} max ${row.dirtyToPresentMax} (${row.dirtyToPresentSamples} samples)`;
   console.log(
-    `${scenario}${load ? ' (loaded)' : ''}: ${row.frames} frames at ${s.hz} Hz, ${row.late} late (${pct}%); work ms p50 ${row.p50} p90 ${row.p90} p99 ${row.p99} max ${row.max}; main thread ${row.cpuMs} ms CPU, ${row.cpuPerFrame} a frame`,
+    `${scenario}${load ? ' (loaded)' : ''}: ${row.frames} frames at ${s.hz} Hz, ${row.late} late (${pct}%); work ms p50 ${row.p50} p90 ${row.p90} p99 ${row.p99} max ${row.max}; main thread ${row.cpuMs} ms CPU, ${row.cpuPerFrame} a frame${handoff}`,
   );
 }
 
