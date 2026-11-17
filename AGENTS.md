@@ -22,10 +22,11 @@ This file is written for Mike's own copy. The machines it names (the M5,
 `bruce`, `cloud`, `tinker-desk`) and paths under `~/dev/me` are his: in
 anyone else's copy (`origin` isn't mikecann/threadbear), skip those steps
 and ask the user what they use instead, rather than trying to reach them.
-There, Mike's work comes in only as a release, through
-`docs/bringing-in-updates.md` (checked and landed), even when they ask for
-one change of his: a plain `git merge upstream/main` skips the checks, and
-a release's new checks then fail every other thread's landing.
+There, a release of Mike's comes in through `docs/bringing-in-updates.md`
+(checked and landed), never a plain `git merge upstream/main`: that skips
+the checks, and a release's new checks then fail every other thread's
+landing. One change of his they ask for by name can still be
+cherry-picked.
 
 ## Rules
 

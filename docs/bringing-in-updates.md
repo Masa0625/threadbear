@@ -77,11 +77,12 @@ to do themselves (a change to `runner/launcher/` only takes effect after
 the release looks halfway through something (a feature half there, a
 commit that says it's temporary, tests skipped), say so. A release often
 adds checks that read the code (a security fix's source tests), and their
-own changes can fail one even where the merge is clean: say that if one
-does, you'll change their code the way the check asks and tell them what
-you changed when you land, so one go covers it. Then ask whether to go
-ahead. Nothing from it has run, and nothing has changed but git's
-objects.
+own changes can fail one even where the merge is clean. Say that if a
+check the release added or changed (it's in `git diff main...<commit>`)
+fails on their code, you'll change their code the way it asks, never the
+check, and show them the diff when you land, so one go covers it. Then
+ask whether to go ahead. Nothing from it has run, and nothing has changed
+but git's objects.
 
 ## 4. Once they say go: merge, settle clashes, check
 
@@ -119,10 +120,12 @@ you land.
 ## 5. Land
 
 If the checks passed and every clash went the way you told them, `tb land`.
-A fix to their code for one of the release's own checks, as section 3
-said, needs no second ask: say what you changed when it's landed. If
-anything else failed, or you had to rework something you hadn't told them
-about, say what and ask again first. The runner, the backend and the app
+A change to their code for a check the release added or changed, as
+section 3 said, needs no second ask: show them its diff once it's landed.
+Ask again first, saying what and why, if a check that was there before
+the release failed, if the fix would mean changing a check rather than
+their code, if anything else failed, or if you had to rework something
+you hadn't told them about. The runner, the backend and the app
 then update themselves from main, as they do for any change.
 
 If something goes wrong afterwards, `git revert -m 1 <merge commit>` on
@@ -139,5 +142,6 @@ main` only when they say yes. GitHub refuses a push that changes
 `workflow` scope, which the GitHub CLI doesn't ask for by default. If
 `origin` pushes over HTTPS, look at `gh auth status` before you ask, and if
 its scopes lack `workflow`, ask them to run `gh auth refresh -h github.com
--s workflow` in a Terminal (or push over SSH, where scopes don't apply). If `origin` isn't on GitHub, or they'd rather
-keep main to this Mac, leave it.
+-s workflow` in a Terminal (or push over SSH, where scopes don't apply).
+If `origin` isn't on GitHub, or they'd rather keep main to this Mac, leave
+it.
