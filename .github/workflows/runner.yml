@@ -1,212 +1,61 @@
-# The runner's typecheck and unit tests, the Convex functions' and the
-# website's typechecks and the website's tests, on GitHub's Ubuntu and macOS
-# machines, with Node 24 and the newest Node. Mike's own checks (./check.sh
-# on Tinker Desk or the cloud box) only ever run on his Node 24.22.1 and his
-# Macs, while the README promises "Node 24 or newer" and INSTALL.md offers a
-# runner on Linux. On 9 Nov 2026 someone ran main on these machines and it
-# failed on both, over a test that took GitHub's user name, `runner`, for a
-# private one (PR #34); nothing here would have said.
-#
-# Nothing needs a secret or a login: check.sh turns off the Convex mirror and
-# CLI updates for every test, and no test spawns a real claude or codex. It
-# runs on contributors' PRs too, so it only reads the repo.
-#
-# It costs nothing, and must stay that way (Mike, 9 Nov): GitHub's standard
-# hosted runners (ubuntu-24.04, macos-26) are free for a public repo, while
-# larger ones (anything -large, -xlarge or with more cores) are billed. So:
-# standard runners only, no schedule or cron, a newer push replaces a run
-# still waiting, and it only runs when something it checks changed (the paths
-# below: the runner, Convex, the website, the relay and scripts/ that the
-# runner's tests cover, check.sh that runs them, the root packages, and
-# this file).
-#
-# tb land holds a landing that changes what this checks while its last run
-# on main failed (runner/src/land-gate.ts, docs/thread-worktrees.md "Red on
-# GitHub"), and main's runs aren't cancelled by newer pushes, so each one
-# finishes and says something (only a pull request's are). From 16 to 19
-# Nov this workflow was red on Windows while landings went on top, and
-# with every workflow having to pass on one commit for the daily release,
-# none went out (runner/src/upstream.ts).
-# tb land: hold while red
+# Temporary diagnosis branch: never merge. Which runner unit test files are
+# slow on GitHub's Mac runners (the Mac jobs time out at 30 minutes).
 name: Runner, Convex and website tests
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'runner/**'
-      - 'convex/**'
-      - 'web/**'
-      - 'shared/**'
-      - 'relay/**'
-      - 'scripts/**'
-      - 'check.sh'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/runner.yml'
-  pull_request:
-    # The same list as push's, kept in step by hand.
-    paths:
-      - 'runner/**'
-      - 'convex/**'
-      - 'web/**'
-      - 'shared/**'
-      - 'relay/**'
-      - 'scripts/**'
-      - 'check.sh'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/runner.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: runner-tests-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-# Only in Mike's repo (or when started by hand): in a fork, a push of its
-# main ran every job here on Linux, Mac, Windows and Android, though its
-# owner only builds and checks for their own system (./check.sh does that
-# before tb land), and most of those runs went red for reasons that were
-# never theirs (Wayne, 19 Nov 2026; 9 forks had Actions on). PRs to Mike's
-# repo still run, as they run in his repo.
 jobs:
-  test:
-    if: github.repository == 'mikecann/threadbear' || github.event_name == 'workflow_dispatch'
-    name: ${{ matrix.os }}, Node ${{ matrix.node }}
+  diag:
+    name: diag ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-26]
-        # 24 is the oldest the README and setup accept (scripts/setup.mjs);
-        # "current" is the newest release, which Homebrew's plain `node`
-        # installs, so a stranger may well be on it.
-        node: ['24', current]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-
-      - name: Pick the Node
-        id: node
-        # setup-node's own "current" took v27.0.0-alpha on 9 Nov, as Node's
-        # alphas are first in its release list now. This is the newest
-        # release that isn't a pre-release (no "-" in its version).
-        run: |
-          if [ "${{ matrix.node }}" = current ]; then
-            v=$(curl -fsSL https://nodejs.org/dist/index.json | jq -r '[.[] | select(.version | test("-") | not)][0].version')
-            [ -n "$v" ] && [ "$v" != null ] || { echo "Couldn't read Node's newest release"; exit 1; }
-            v="${v#v}"
-          else
-            v="${{ matrix.node }}"
-          fi
-          echo "Node $v"
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: ${{ steps.node.outputs.version }}
+          node-version: '24'
           cache: npm
           cache-dependency-path: |
             package-lock.json
             runner/package-lock.json
-
       - name: Image tools (Linux)
         if: runner.os == 'Linux'
-        # What INSTALL.md section 6 has a Linux runner install: ImageMagick
-        # and rsvg-convert stand in for macOS's sips and Quick Look when
-        # pictures are converted, and the image tests use them.
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q imagemagick librsvg2-bin
-
       - name: Packages
         run: |
           node --version
           npm ci --no-audit --no-fund
           (cd runner && npm ci --no-audit --no-fund)
-
-      - name: Convex typecheck
-        run: npm run convex:typecheck
-
-      - name: Website typecheck
-        run: npm run web:typecheck
-
-      - name: Website tests
-        run: npm run web:test
-
-      - name: Runner typecheck and unit tests
-        # Through check.sh, as `tb land` and the runner's self-update run
-        # them: its environment for tests (no Convex, no CLI updates, no
-        # THREADBEAR_* from outside) and its second run of a few files that
-        # failed, for tests with real timeouts on a slow machine. --local
-        # keeps it here; THREADBEAR_NODE is the Node set up above.
-        run: THREADBEAR_NODE="$(command -v node)" ./check.sh --runner --local
-
-      - name: Keep check.sh's logs
-        if: failure()
+      - name: The machine
         run: |
-          mkdir -p "$RUNNER_TEMP/check-logs"
-          cp -R "${TMPDIR:-/tmp}"/threadbear-check.* "$RUNNER_TEMP/check-logs/" 2>/dev/null || true
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: failure()
-        with:
-          name: check-logs-${{ matrix.os }}-node-${{ matrix.node }}
-          path: ${{ runner.temp }}/check-logs
-          if-no-files-found: ignore
-
-  # The runner on Windows itself, without WSL (docs/gpui-port/runner-windows-plan.md).
-  # check.sh is bash and Mac-shaped, so this runs the typecheck and
-  # scripts/test-windows.mjs: every unit test file except those in
-  # runner/test/windows-known-failing.txt must pass, and those are run as a
-  # report. Take a file off the list once it passes; the list only shrinks.
-  windows:
-    if: github.repository == 'mikecann/threadbear' || github.event_name == 'workflow_dispatch'
-    name: windows-latest, Node 24
-    runs-on: windows-latest
-    timeout-minutes: 60
-    defaults:
-      run:
+          node -e 'const os = require("os"); console.log(os.availableParallelism(), "cores", os.cpus()[0].model, Math.round(os.totalmem() / 2 ** 30), "GB")'
+          command -v bash git cargo rustc swift npm || true
+          bash --version | head -1
+          time node -e 0
+          time npm --version
+          time git --version
+      - name: check-cache.test.ts alone
         working-directory: runner
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: runner/package-lock.json
-
-      # The repo root's too: the backend tests load convex/server from there
-      # (test/helpers/convex-memory.ts), and 28 files failed without it.
-      - name: Packages
-        run: |
-          npm ci --no-audit --no-fund --prefix ..
-          npm ci --no-audit --no-fund
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit tests that should pass
         env:
           THREADBEAR_CLI_UPDATES: 'off'
           THREADBEAR_SYNC: 'off'
           THREADBEAR_JOB_PRIORITY: normal
-        run: node scripts/test-windows.mjs
-
-      # Many of these wait on something Windows never gives, so each test
-      # gets 20 s and the whole report 20 minutes, and it never fails the run.
-      - name: Known-failing files (a report, never fails the run)
+        run: time node --import=./test/helpers/clean-env.ts --test --test-timeout=300000 --test-force-exit --test-reporter=spec test/unit/check-cache.test.ts
+      - name: Every unit test file, with when each started and how long it took
         if: always()
-        continue-on-error: true
-        timeout-minutes: 20
+        working-directory: runner
         env:
           THREADBEAR_CLI_UPDATES: 'off'
           THREADBEAR_SYNC: 'off'
           THREADBEAR_JOB_PRIORITY: normal
-          THREADBEAR_TEST_TIMEOUT_MS: '20000'
-          THREADBEAR_TEST_CONCURRENCY: '4'
-        run: node scripts/test-windows.mjs --known
+        run: time node --import=./test/helpers/clean-env.ts --test --test-timeout=300000 --test-force-exit --test-reporter=./test/helpers/diag-reporter.mjs --test-reporter-destination=stdout 'test/unit/**/*.test.ts'
