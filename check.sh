@@ -520,6 +520,32 @@ LIMITED=("$NODE" "$ROOT/scripts/limit-step.mjs"
 # test that fails on its own as well still fails the step.
 RERUN_MAX_FILES=8
 UNIT_FAILED_FILES=""
+# On GitHub the job's log is all there is to watch, and with the tests'
+# output in a file this step printed nothing until it ended: the Mac jobs
+# were stopped at their 30 minutes 18 runs in a row (22 to 23 Nov 2026)
+# and no log said which file they were on. So there the process that runs
+# the files says each minute which are still going, and the slowest at the
+# end (test/helpers/progress-reporter.mjs), on its stderr, which unit_tests
+# sends to this script's output rather than to the log (the test files' own
+# stderr is piped to that process, so it still goes to the log). Only where
+# the reporter is: a test's stand-in checkout has none, and a reporter node
+# can't load fails the run.
+UNIT_PROGRESS=()
+if [ -n "${GITHUB_ACTIONS:-}" ] && [ -f "$ROOT/runner/test/helpers/progress-reporter.mjs" ]; then
+  UNIT_PROGRESS=(--test-reporter=./test/helpers/progress-reporter.mjs --test-reporter-destination=stderr)
+fi
+# unit_tests <log> <command...>: runs it in runner/ with its output in <log>,
+# and its stderr too unless that's the progress above (through fd 3).
+unit_tests() {
+  local out="$1" code
+  shift
+  : >"$out"
+  if [ "${#UNIT_PROGRESS[@]}" -gt 0 ]; then exec 3>&1; else exec 3>>"$out"; fi
+  (cd "$ROOT/runner" && "$@") >>"$out" 2>&3 3>&-
+  code=$?
+  exec 3>&-
+  return "$code"
+}
 runner_unit_tests() {
   local name="runner unit tests" dir="$ROOT/runner"
   local log="$LOGS/runner-unit-tests.log" list="$LOGS/runner-unit-tests.failed"
@@ -587,9 +613,9 @@ runner_unit_tests() {
     fi
   fi
   local run=(node --import=./test/helpers/clean-env.ts --test --test-timeout=300000 --test-force-exit --test-reporter=spec)
-  if (cd "$dir" && "${run[@]}" --test-reporter-destination=stdout \
+  if unit_tests "$log" "${run[@]}" --test-reporter-destination=stdout \
       --test-reporter=./test/helpers/failed-files-reporter.mjs --test-reporter-destination="$list" \
-      ${record[@]+"${record[@]}"} "${targets[@]}") >"$log" 2>&1; then
+      ${record[@]+"${record[@]}"} ${UNIT_PROGRESS[@]+"${UNIT_PROGRESS[@]}"} "${targets[@]}"; then
     printf 'ok    %-20s %4ss%s\n' "$name" "$((SECONDS - start))" "$note"
     record_test_passes "$passed"
     return
@@ -618,8 +644,9 @@ runner_unit_tests() {
     # (With the pass reporter too: the files that passed on their own, no
     # test of theirs skipped, are the ones recorded. Codex's review.)
     local again=()
-    [ "${#record[@]}" = 0 ] || again=(--test-reporter-destination=stdout --test-reporter=./test/helpers/passed-files-reporter.mjs --test-reporter-destination="$passed.again")
-    if (cd "$dir" && "${run[@]}" --test-concurrency=1 ${again[@]+"${again[@]}"} "${files[@]}") >"$relog" 2>&1; then
+    [ "${#record[@]}" = 0 ] || again=(--test-reporter=./test/helpers/passed-files-reporter.mjs --test-reporter-destination="$passed.again")
+    if unit_tests "$relog" "${run[@]}" --test-reporter-destination=stdout --test-concurrency=1 \
+        ${again[@]+"${again[@]}"} ${UNIT_PROGRESS[@]+"${UNIT_PROGRESS[@]}"} "${files[@]}"; then
       printf 'ok    %-20s %4ss  (passed on a second run of the files that failed:)\n' "$name" "$((SECONDS - start))"
       record_test_passes "$passed.again"
       # The tests that failed the first time: the spec reporter's ✖ lines,

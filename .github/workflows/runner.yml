@@ -143,16 +143,24 @@ jobs:
         # THREADBEAR_* from outside) and its second run of a few files that
         # failed, for tests with real timeouts on a slow machine. --local
         # keeps it here; THREADBEAR_NODE is the Node set up above.
+        #
+        # The Mac jobs take 17 to 20 of their 30 minutes. From 22 Nov 2026
+        # they ran out of them on 18 pushes in a row (one new test file took
+        # 17 minutes there and 21 s on Linux), and a job stopped at its limit
+        # is "cancelled" to GitHub, not failed. So here check.sh prints a
+        # line a minute with the test files still running, and the slowest
+        # at the end (runner/test/helpers/progress-reporter.mjs), and the
+        # logs below are kept for a job that was stopped too.
         run: THREADBEAR_NODE="$(command -v node)" ./check.sh --runner --local
 
       - name: Keep check.sh's logs
-        if: failure()
+        if: failure() || cancelled()
         run: |
           mkdir -p "$RUNNER_TEMP/check-logs"
           cp -R "${TMPDIR:-/tmp}"/threadbear-check.* "$RUNNER_TEMP/check-logs/" 2>/dev/null || true
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: failure()
+        if: failure() || cancelled()
         with:
           name: check-logs-${{ matrix.os }}-node-${{ matrix.node }}
           path: ${{ runner.temp }}/check-logs

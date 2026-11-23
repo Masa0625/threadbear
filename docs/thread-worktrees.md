@@ -246,7 +246,10 @@ day never finishes one and the gate holds on an old red run for hours (12
 Nov): `desktop.yml` cancels in progress only for pull requests, so main's
 runs go one at a time, with the newest push waiting in place of any before it.
 
-Fix what failed first (`gh run view <id> --log-failed`). The landing that is
+Fix what failed first (`gh run view <id> --log-failed`; for a job that
+timed out, `--log`, whose end shows how far it got: in `runner.yml` the
+unit tests print a line a minute with the test files still running, and the
+slowest ones at the end, `runner/test/helpers/progress-reporter.mjs`). The landing that is
 that fix, or one made while main already has a fix GitHub hasn't run yet
 (main is only pushed now and then), goes in with `tb land --despite-red`.
 GitHub's answer is kept in the repo's git folder
@@ -493,7 +496,9 @@ ok    runner unit tests      94s  (skipped 301 test files that passed with what 
 - A step's key holds the files it reads (a table in check-cache.mjs, a
   superset of what check.sh looks at to run it; a step not in it reads
   everything), its command line and its tool's version (cargo and rustc,
-  swift, npm). The TypeScript checks and lint read every code file, as
+  swift, npm; asked with `RUSTUP_AUTO_INSTALL=0`, so asking never downloads
+  a toolchain, and a pass isn't recorded under a version that couldn't be
+  read). The TypeScript checks and lint read every code file, as
   tsc follows imports out of runner/ and lint's type-aware rules read what
   a file imports.
 - A test file's key holds its imports, followed all the way, and what the
