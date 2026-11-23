@@ -237,7 +237,16 @@ paths:` match any of it (any file at all, with no paths) asks GitHub, with
 finished run on main went, past runs cancelled for a newer push. If that
 failed, nothing lands, before the check runs: it names the run, which jobs
 and steps failed, any newer run still going, and the files of the branch the
-workflow checks (`runner/src/land-gate.ts`). It asks again once the check
+workflow checks (`runner/src/land-gate.ts`). A run whose job was stopped at
+its `timeout-minutes` counts as failed too. GitHub calls that job, and its
+run, cancelled, like a run a newer push replaced, and from 22 Nov
+`runner.yml`'s Mac jobs hit their 30 minutes on 18 pushes in a row, for 36
+hours, with the gate looking past every one. So each cancelled run before
+the last finished one is asked for its jobs, and a job that was stopped
+while running a step for what GitHub wrote on it ("The job has exceeded the
+maximum execution time of 30m0s"). A run that turns out to say nothing is
+remembered beside the shared answer (`threadbear-land-gate/<workflow>.cancelled.json`
+in the repo's git folder), so each is asked about once. It asks again once the check
 has passed, just before main moves, as a run going when it started may have
 failed since. A trigger it can't read (an alias, a list over several lines)
 counts as every file, and a whole page of cancelled runs as "couldn't ask".

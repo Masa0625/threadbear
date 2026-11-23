@@ -41,13 +41,21 @@ function workflows(files: Record<string, string>): string {
   return root;
 }
 
-// gh as GitHub would answer: the runs, newest first, and each run's jobs.
-function fakeGh(runs: object[] | 'offline', jobs: Record<number, object[]> = {}): Gh & { calls: string[][] } {
+// gh as GitHub would answer: the runs, newest first, each run's jobs, and
+// what GitHub wrote on a job (by the job's id; 'offline' for one it can't give).
+function fakeGh(runs: object[] | 'offline', jobs: Record<number, object[]> = {}, notes: Record<number, string[] | 'offline'> = {}): Gh & { calls: string[][] } {
   const calls: string[][] = [];
   const fn = async (args: string[]) => {
     calls.push(args);
     if (runs === 'offline') return { ok: false, stdout: '', stderr: 'error connecting to api.github.com\nmore' };
     if (args[1] === 'list') return { ok: true, stdout: JSON.stringify(runs), stderr: '' };
+    if (args[0] === 'api') {
+      const asked = /check-runs\/(\d+)\/annotations\?per_page=100&page=(\d+)$/.exec(args[1]);
+      const said = notes[Number(asked?.[1])] ?? [];
+      if (said === 'offline') return { ok: false, stdout: '', stderr: 'HTTP 403: API rate limit exceeded' };
+      const page = Number(asked?.[2]);
+      return { ok: true, stdout: JSON.stringify(said.slice((page - 1) * 100, page * 100).map((message) => ({ annotation_level: 'failure', message }))), stderr: '' };
+    }
     return { ok: true, stdout: JSON.stringify({ jobs: jobs[Number(args[2])] ?? [] }), stderr: '' };
   };
   return Object.assign(fn, { calls });
@@ -114,6 +122,114 @@ test("the last finished run on main is the verdict, past cancelled ones", async 
   // A whole page of cancelled runs can't say the failure before them was fixed.
   const cancelled = Array.from({ length: 100 }, (_, i) => run(200 - i, 'cancelled', `c${i}`));
   assert.equal((await lastVerdict(root, 'x.yml', fakeGh(cancelled))).state, 'unknown');
+});
+
+// runner.yml's Mac jobs hit their 30 minute limit on every push of main from
+// 22 Nov 2026 for 36 hours. GitHub calls such a job, and its run, cancelled,
+// the word it has for a run a newer push replaced, so the gate looked past
+// 18 of them to the last green one and nothing was held.
+const TIMED_OUT = 'The job has exceeded the maximum execution time of 30m0s';
+const STOPPED = 'The operation was canceled.';
+const macJob = (id: number) => ({ databaseId: id, name: 'macos-26, Node 24', conclusion: 'cancelled', steps: [{ name: 'Packages', conclusion: 'success' }, { name: 'Runner typecheck and unit tests', conclusion: 'cancelled' }, { name: 'Keep logs', conclusion: 'skipped' }] });
+
+test('a run whose job was cancelled by its own time limit is red, and one a newer push replaced still says nothing', async () => {
+  const root = tmpDir();
+  const runs = [run(6, 'cancelled', 'f'), run(5, 'cancelled', 'e'), run(4, 'cancelled', 'd'), run(3, 'success', 'c')];
+  // 6 never started (a newer push took its place); 5 timed out on the Mac
+  // while Linux passed; 4 is never asked about.
+  const gh = fakeGh(runs, { 6: [], 5: [{ databaseId: 50, name: 'ubuntu-24.04, Node 24', conclusion: 'success' }, macJob(51), { ...macJob(52), name: 'macos-26, Node current' }] }, { 51: [TIMED_OUT, STOPPED], 52: [TIMED_OUT, STOPPED] });
+  const v = await lastVerdict(root, 'runner.yml', gh);
+  assert.ok(v.state === 'red', JSON.stringify(v));
+  assert.equal(v.run.databaseId, 5);
+  assert.equal(v.timedOut, true);
+  assert.deepEqual(v.failedJobs, ['macos-26, Node 24 (Runner typecheck and unit tests, over its 30m0s limit)', 'macos-26, Node current (Runner typecheck and unit tests, over its 30m0s limit)']);
+  assert.deepEqual(gh.calls.slice(1).map((c) => c.slice(0, 3).join(' ')), ['run view 6', 'run view 5', 'api repos/{owner}/{repo}/check-runs/51/annotations?per_page=100&page=1', 'api repos/{owner}/{repo}/check-runs/52/annotations?per_page=100&page=1']);
+  // The limit's line behind a noisy job's warnings, on a later page, is
+  // still found; and notes that never end are no answer (and not remembered
+  // as nothing).
+  const noise = Array.from({ length: 100 }, (_, i) => `warning ${i}`);
+  const noisy = fakeGh([run(5, 'cancelled', 'e'), run(3, 'success', 'c')], { 5: [macJob(51)] }, { 51: [...noise, ...noise, TIMED_OUT] });
+  const late = await lastVerdict(root, 'runner.yml', noisy);
+  assert.ok(late.state === 'red' && late.timedOut, JSON.stringify(late));
+  assert.equal(noisy.calls.filter((c) => c[0] === 'api').length, 3);
+  const endless = fakeGh([run(5, 'cancelled', 'e'), run(3, 'success', 'c')], { 5: [macJob(51)] }, { 51: Array.from({ length: 5000 }, () => 'warning') });
+  const kept = new Set<string>();
+  assert.equal((await lastVerdict(root, 'runner.yml', endless, kept)).state, 'unknown');
+  assert.equal(kept.size, 0);
+
+  // Stopped by hand, or by a push where the workflow cancels what's going:
+  // its job was running too, but GitHub wrote no time limit on it.
+  const byHand = fakeGh([run(5, 'cancelled', 'e'), run(3, 'success', 'c')], { 5: [macJob(51)] }, { 51: [STOPPED] });
+  assert.equal((await lastVerdict(root, 'runner.yml', byHand)).state, 'green');
+  // A job that never got to a step isn't asked about.
+  const waiting = fakeGh([run(5, 'cancelled', 'e'), run(2, 'failure', 'b')], { 5: [{ databaseId: 51, name: 'Mac', conclusion: 'cancelled', steps: [] }] }, { 51: [TIMED_OUT] });
+  const older = await lastVerdict(root, 'runner.yml', waiting);
+  assert.ok(older.state === 'red' && older.run.databaseId === 2 && !older.timedOut);
+  assert.ok(!waiting.calls.some((c) => c[0] === 'api'));
+  // However many pushes took a waiting run's place after it (a busy day has
+  // dozens): each cancelled run is looked into, down to one that says something.
+  const busy = [...Array.from({ length: 30 }, (_, i) => run(100 - i, 'cancelled', `z${i}`)), run(60, 'cancelled', 'y'), run(3, 'success', 'c')];
+  const many = fakeGh(busy, { 60: [macJob(51)] }, { 51: [TIMED_OUT] });
+  const nothing = new Set<string>();
+  const past = await lastVerdict(root, 'runner.yml', many, nothing);
+  assert.ok(past.state === 'red' && past.run.databaseId === 60 && past.timedOut, JSON.stringify(past));
+  assert.equal(many.calls.filter((c) => c[1] === 'view').length, 31);
+  // Each once: a finished run doesn't change, so the ones that said nothing
+  // are remembered, and the next landing asks only about the rest.
+  assert.equal(nothing.size, 30);
+  const again = fakeGh(busy, { 60: [macJob(51)] }, { 51: [TIMED_OUT] });
+  assert.equal((await lastVerdict(root, 'runner.yml', again, nothing)).state, 'red');
+  assert.deepEqual(again.calls.filter((c) => c[1] === 'view').map((c) => c[2]), ['60']);
+  // A run started again (a new attempt) is asked about again.
+  const rerun = fakeGh([{ ...run(100, 'cancelled', 'z0'), attempt: 2 }, run(3, 'success', 'c')], { 100: [macJob(51)] }, { 51: [TIMED_OUT] });
+  assert.equal((await lastVerdict(root, 'runner.yml', rerun, nothing)).state, 'red');
+  // GitHub not saying why a running job was cancelled is no answer, not green:
+  // the answer kept from a minute ago stands (keptVerdict).
+  const quiet = fakeGh([run(5, 'cancelled', 'e'), run(3, 'success', 'c')], { 5: [macJob(51)] }, { 51: 'offline' });
+  assert.deepEqual(await lastVerdict(root, 'runner.yml', quiet), { state: 'unknown', why: 'HTTP 403: API rate limit exceeded' });
+  // But one job's line is enough: the next job's not being given doesn't undo it.
+  const half = fakeGh([run(5, 'cancelled', 'e'), run(3, 'success', 'c')], { 5: [macJob(51), { ...macJob(52), name: 'macos-26, Node current' }] }, { 51: [TIMED_OUT], 52: 'offline' });
+  const proven = await lastVerdict(root, 'runner.yml', half);
+  assert.ok(proven.state === 'red' && proven.timedOut);
+  assert.deepEqual(proven.failedJobs, ['macos-26, Node 24 (Runner typecheck and unit tests, over its 30m0s limit)']);
+});
+
+test('which cancelled runs said nothing is kept with the shared answer, so each is asked about once', async () => {
+  const root = workflows({ 'desktop.yml': WORKFLOW });
+  let now = 1_000_000;
+  const cache = { dir: path.join(tmpDir(), 'gate'), now: () => now };
+  const runs = [run(9, 'cancelled', 'i'), run(8, 'cancelled', 'h'), run(7, 'cancelled', 'g'), run(3, 'success', 'c')];
+  const first = fakeGh(runs, { 7: [macJob(51)] }, { 51: [TIMED_OUT] });
+  assert.ok(await landHold(root, ['desktop/a'], () => {}, first, cache));
+  assert.deepEqual(first.calls.filter((c) => c[1] === 'view').map((c) => c[2]), ['9', '8', '7']);
+  // A minute on, the answer is asked for again: only the run that timed out
+  // is looked into (it may have been started again).
+  now += FRESH_MS + 1;
+  const second = fakeGh(runs, { 7: [macJob(51)] }, { 51: [TIMED_OUT] });
+  assert.ok(await landHold(root, ['desktop/a'], () => {}, second, cache));
+  assert.deepEqual(second.calls.filter((c) => c[1] === 'view').map((c) => c[2]), ['7']);
+  // Kept too when GitHub then stops answering part way.
+  now += FRESH_MS + 1;
+  const more = [run(11, 'cancelled', 'k'), run(10, 'cancelled', 'j'), ...runs];
+  const third = fakeGh(more, { 10: [macJob(60)] }, { 60: 'offline' });
+  await landHold(root, ['desktop/a'], () => {}, third, cache);
+  now += FRESH_MS + 1;
+  const fourth = fakeGh(more, { 10: [], 7: [macJob(51)] }, { 51: [TIMED_OUT] });
+  assert.ok(await landHold(root, ['desktop/a'], () => {}, fourth, cache));
+  assert.deepEqual(fourth.calls.filter((c) => c[1] === 'view').map((c) => c[2]), ['10', '7']);
+});
+
+test('a landing held for a run that timed out says so, and where to look', async () => {
+  const root = workflows({ 'desktop.yml': WORKFLOW });
+  const gh = fakeGh([run(5, 'cancelled', '2026-11-23T07:12:47Z'), run(3, 'success', 'c')], { 5: [macJob(51)] }, { 51: [TIMED_OUT] });
+  const held = await landHold(root, ['desktop/a.rs'], () => {}, gh);
+  assert.ok(held);
+  assert.match(held, /^Desktop app \(desktop\.yml\) timed out on main's last run, so nothing landed/);
+  assert.match(held, /Timed out: macos-26, Node 24 \(Runner typecheck and unit tests, over its 30m0s limit\)/);
+  assert.match(held, /GitHub shows a job stopped at its time limit as cancelled/);
+  assert.match(held, /gh run view 5 --log /);
+  assert.doesNotMatch(held, /--log-failed/);
+  assert.match(held, /tb land --despite-red/);
 });
 
 test('a landing touching what a red workflow checks is held, with what failed and how to go on', async () => {

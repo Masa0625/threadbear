@@ -310,8 +310,10 @@ File references are where to look.
   check took (branch, commit, step times, no output), cut back at 1 MiB.
   In a repo with a GitHub workflow marked `# tb land: hold while red`
   (this one's `desktop.yml`), it runs your `gh` to ask GitHub how that
-  workflow's last runs on main went, when the landing changes files it
-  checks (`runner/src/land-gate.ts`). Nothing of the branch is sent.
+  workflow's last runs on main went (and, for a cancelled one, its jobs
+  and the notes GitHub wrote on them, which say when one ran out of time),
+  when the landing changes files it checks (`runner/src/land-gate.ts`).
+  Nothing of the branch is sent.
   A landing waiting for the lock leaves a small JSON file in
   `threadbear-land-queue/` there (branch, worktree, commits, process id),
   removed when it's done, and the lock's holder keeps
