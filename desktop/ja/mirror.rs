@@ -1,17 +1,3 @@
-// Japanese screens by a copy of the source (desktop/ja/README.md).
-//
-// Cargo doesn't build src/ itself but a copy the build script makes here
-// ($OUT_DIR/ja/). The copy's root (main.rs, lib.rs) is the original with a
-// `#[path]` to each module's own file, so only a file with a table in
-// desktop/ja/<crate>/ (or with modules of its own under it) is copied, its
-// table's literals swapped for expressions that pick English or Japanese.
-// The source itself is never changed, so Mike's updates come in as they are.
-//
-// Swaps stay inside their line, so line n of a copy is line n of the
-// original and the compiler's line numbers can be looked up there.
-//
-// Used by the build scripts (gpui/build.rs, core/build.rs) and core's tests
-// (`ja_mirror_tests`). Only std, so Cargo.lock stays as it is.
 #![allow(
     dead_code,
     reason = "each build script uses its own half, and the tests the rest"
@@ -21,7 +7,6 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-/// gpui's build script: the copy of src/main.rs.
 pub fn gpui() {
     let dir = manifest_dir();
     let out = out_dir();
@@ -51,7 +36,6 @@ pub fn gpui() {
     report.emit();
 }
 
-/// core's build script: the copy of src/lib.rs.
 pub fn core() {
     let dir = manifest_dir();
     let mut report = mirror(&Crate {
@@ -91,7 +75,6 @@ fn path_mod(path: &Path, item: &str) -> String {
     format!("#[path = {:?}] {item}", clean(path).display().to_string())
 }
 
-/// Which crate is copied, so what the swapped expressions call.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Side {
     Core,
@@ -120,7 +103,6 @@ impl Side {
         }
     }
 
-    /// The table's file in $OUT_DIR/ja and how it's declared there.
     fn table_file(self) -> (&'static str, &'static str) {
         match self {
             Side::Core => ("table.rs", "pub static"),
@@ -129,41 +111,26 @@ impl Side {
     }
 }
 
-/// How one crate is copied.
 pub struct Crate {
     pub dir: PathBuf,
-    /// The original root (what Cargo.toml pointed at before).
     pub root: &'static str,
-    /// What Cargo.toml points at now: a file that only includes the copy.
     pub stub: &'static str,
     pub tables: PathBuf,
     pub side: Side,
-    /// Put before the copied root's first line (the line count stays).
     pub first: Option<String>,
-    /// Lines added after the copied root.
     pub extra: Vec<String>,
-    /// Put at the start of `fn main`.
     pub main_call: Option<String>,
     pub out: PathBuf,
 }
 
-/// What a copy did, for whoever brings in Mike's next release.
 #[derive(Default)]
 pub struct Report {
-    /// Swapped: (file, line, English).
     pub translated: Vec<(String, usize, String)>,
-    /// Table words left English where they're written: (file, line, English, why).
     pub kept: Vec<(String, usize, String, String)>,
-    /// Literals that look like words on the screen and aren't in a table:
-    /// (file, line, text).
     pub missing: Vec<(String, usize, String)>,
-    /// Table lines whose words the source no longer has: (table, words).
     pub stale: Vec<(String, String)>,
-    /// Tooltips whose words couldn't be made twice: (file, line, why).
     pub notes: Vec<(String, usize, String)>,
-    /// What stops the build.
     pub errors: Vec<String>,
-    /// What the build script reruns for.
     pub watch: Vec<PathBuf>,
 }
 
@@ -198,7 +165,6 @@ impl Report {
         }
     }
 
-    /// The list for people, written to $OUT_DIR/ja-report.txt.
     pub fn text(&self) -> String {
         let mut s = String::new();
         let _ = writeln!(
@@ -229,8 +195,6 @@ impl Report {
     }
 }
 
-/// Makes the copy, writing only files whose text changed (so nothing
-/// rebuilds for nothing).
 pub fn mirror(c: &Crate) -> Report {
     let mut report = Report::default();
     let mut tables = load_tables(&c.tables, &mut report);
@@ -245,8 +209,7 @@ pub fn mirror(c: &Crate) -> Report {
     let mut m = Mirror { c, tables, report };
     let root = c.dir.join(c.root);
     let text = m.file(&root, true, Path::new(c.root));
-    // The copy's root is include!d, where `#![...]` and `//!` can't be: the
-    // stub carries them, and it must say what the root says.
+    // The copy's root is include!d, where `#![...]` and `//!` can't be.
     let (text, inner) = blank_inner_attributes(&text);
     let stub = std::fs::read_to_string(c.dir.join(c.stub)).unwrap_or_default();
     let stub_attrs = squash(&blank_inner_attributes(&strip_comments(&stub)).1.join(""));
@@ -276,7 +239,6 @@ pub fn mirror(c: &Crate) -> Report {
     m.report
 }
 
-/// `static TABLE: [(&str, &str); N]`, each pair as the table wrote it.
 fn table_source(declared: &str, rows: &[(String, String)]) -> String {
     let mut s = format!(
         "// Written by desktop/ja/mirror.rs from desktop/ja's tables.\n\
@@ -291,41 +253,31 @@ fn table_source(declared: &str, rows: &[(String, String)]) -> String {
 }
 
 struct Table {
-    /// The table's path, to name it in a message.
     name: String,
     entries: Vec<Entry>,
     rules: Vec<Rule>,
-    /// `made: <fn>`: (function, line, found).
     made: Vec<(String, usize, bool)>,
-    /// `tip-macro: <name> <n>`: the macro's nth argument is a tooltip.
     tip_macros: Vec<(String, usize)>,
-    /// `tip-method: <name>`: `.name(…)` in this file is the Tip trait's.
     tip_methods: Vec<String>,
-    /// `skip "…"`: (words, used).
     skips: Vec<(String, bool)>,
-    /// Its file was found and copied.
     visited: bool,
 }
 
 struct Entry {
     en: String,
     ja: String,
-    /// English where it's written: it's also an id or a screen reader's name.
     tip: bool,
     used: bool,
-    /// Its row in the crate's TABLE.
     index: usize,
 }
 
 struct Rule {
     find: String,
     with: String,
-    /// Every match (`replace all:`) rather than exactly one.
     all: bool,
     line: usize,
 }
 
-/// desktop/ja/<crate>/<path under src>.txt is the table for src/<path>.rs.
 fn load_tables(dir: &Path, report: &mut Report) -> BTreeMap<PathBuf, Table> {
     let mut out = BTreeMap::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -362,22 +314,6 @@ fn load_tables(dir: &Path, report: &mut Report) -> BTreeMap<PathBuf, Table> {
     out
 }
 
-/// A table, a line each:
-///   "English" = "日本語"        swapped where it's written (the literal's text
-///                                as written, escapes and all)
-///   tip "English" = "日本語"    English where it's written, as it's also an id
-///                                or a screen reader's name; drawn in Japanese
-///                                where a `replace:` puts `ja_tip::shown_str`
-///   skip "English"              not on the screen: not listed as missing
-///   replace: <code>             the next `with:` takes its place, exactly once
-///   replace all: <code>         ... every time, at least once
-///   with: <code>
-///   made: <fn>                  the function's answer is a tooltip, made in
-///                                English and again in Japanese (`ja::made`)
-///   tip-macro: <name> <n>       the macro's nth argument is a tooltip
-///   tip-method: <name>          `.name(…)` in the file is the Tip trait's
-///                                (another type's method can share the name)
-///   # to the end of a line is a note
 fn parse_table(name: &str, text: &str) -> Result<Table, String> {
     let mut t = Table {
         name: name.to_owned(),
@@ -484,7 +420,6 @@ fn end_of_line(rest: &str) -> Option<()> {
     (rest.is_empty() || rest.starts_with('#')).then_some(())
 }
 
-/// The text of a `"…"` (escapes as they are) and what follows it.
 fn literal(s: &str) -> Option<(&str, &str)> {
     let body = s.strip_prefix('"')?;
     let mut escaped = false;
@@ -498,7 +433,6 @@ fn literal(s: &str) -> Option<(&str, &str)> {
     None
 }
 
-/// A change to the original text: (start, end, new text).
 type Edit = (usize, usize, String);
 
 struct Mirror<'a> {
@@ -514,7 +448,6 @@ impl Mirror<'_> {
         }
     }
 
-    /// The copy of `path` (an original file); `rel` is its path in the crate.
     fn file(&mut self, path: &Path, is_root: bool, rel: &Path) -> String {
         self.report.watch.push(path.to_path_buf());
         let text = match std::fs::read_to_string(path) {
@@ -563,8 +496,6 @@ impl Mirror<'_> {
         if let Some(table) = self.tables.get(rel) {
             let mut rewritten = std::collections::BTreeSet::new();
             out = rules(&out, table, &file, &mut self.report.errors, &mut rewritten);
-            // A tooltip's let that the table's own replace: rewrites is the
-            // table's to make twice (settings_window.txt's accent dot).
             notes.retain(|n| !rewritten.contains(&n.let_line));
         }
         for n in notes {
@@ -573,7 +504,6 @@ impl Mirror<'_> {
         out
     }
 
-    /// Gives each `mod x;` the absolute path of its own file (or its copy).
     fn child_mods(
         &mut self,
         text: &str,
@@ -624,8 +554,6 @@ impl Mirror<'_> {
                         }
                     };
                     let child_rel = rel_in_crate(&self.c.dir, &file);
-                    // An x.rs with an x/ of modules, and a file with a table,
-                    // are copied; the rest are built where they are.
                     let has_children = file.file_name().is_some_and(|n| n != "mod.rs")
                         && file.with_extension("").is_dir();
                     let target = if has_children || self.tables.contains_key(&child_rel) {
@@ -671,7 +599,6 @@ impl Mirror<'_> {
             if t.kind != Kind::Str {
                 continue;
             }
-            // r"" b"" and an unclosed one are left alone.
             let Some(content) = quoted(t.text(text)) else {
                 continue;
             };
@@ -712,8 +639,6 @@ impl Mirror<'_> {
                     continue;
                 }
                 (true, None) => {
-                    // English, and the table's own address, which a tooltip
-                    // or `shown_str` turns into the Japanese.
                     edits.push((t.start, t.end, format!("{rows}[{row}].0")));
                     self.report.kept.push((
                         file.to_owned(),
@@ -723,7 +648,6 @@ impl Mirror<'_> {
                     ));
                     continue;
                 }
-                // format!("en", …) → ja_format!("ja", "en", …), the arguments as they were.
                 (false, Some((mac_start, open_end))) => edits.push((
                     mac_start,
                     open_end,
@@ -739,7 +663,6 @@ impl Mirror<'_> {
         }
     }
 
-    /// `made: <fn>`: the function's body runs through `ja::made`.
     fn made(&mut self, text: &str, toks: &[Tok], table: &mut Table, edits: &mut Vec<Edit>) {
         let runtime = self.c.side.runtime();
         for (name, line, found) in &mut table.made {
@@ -785,11 +708,6 @@ impl Mirror<'_> {
     }
 }
 
-/// The table's `replace:` rules, on the copy's text. A rule that doesn't
-/// match as many times as it says stops the build: it's what puts a
-/// tooltip's or a word's Japanese where it's drawn.
-/// The lines a rule changed go in `rewritten` (a rule stays inside its line,
-/// so they're the original's lines too).
 fn rules(
     text: &str,
     table: &Table,
@@ -820,16 +738,8 @@ fn rules(
     out
 }
 
-/// Where tooltips are made in a copied gpui file: `.tip(…)` where the table
-/// says it's the Tip trait's (`tip-method: tip`; a row type can have a
-/// `tip` of its own), and each `tip-macro:` macro's argument. A tooltip is
-/// made twice (`ja_tip::faces`),
-/// once in English for its name and once for its words. One that's a
-/// variable has its `let` made twice instead (`ja_tip::both`).
 struct Sinks {
-    /// `.tip(` calls: (the `tip` token, its `(`, its `)`).
     calls: Vec<(usize, usize, usize)>,
-    /// Arguments that are one variable: its token.
     idents: Vec<usize>,
 }
 
@@ -881,7 +791,6 @@ impl Sinks {
         sinks
     }
 
-    /// Makes each tooltip twice, and says which it can't (`Note`).
     fn rewrite(&self, text: &str, toks: &[Tok], edits: &mut Vec<Edit>) -> Vec<Note> {
         let mut notes = Vec::new();
         for &(tip, open, close) in &self.calls {
@@ -927,10 +836,6 @@ impl Sinks {
         notes
     }
 
-    /// The `let` that gives the variable at `at` its value, when it can be
-    /// made twice: in the same function, in a block around `at`, used only
-    /// as a tooltip. `Ok(None)` for a parameter (a `&'static str` one finds
-    /// its Japanese by its address).
     fn binding(
         &self,
         text: &str,
@@ -948,8 +853,6 @@ impl Sinks {
             if t.is_ident(text, "fn") {
                 return Ok(None);
             }
-            // `name: Type` in a closure's or a function's parameters, but not
-            // `let name: Type` or `let mut name: Type`: that's the let, below.
             let after_let = |j: usize| j > 0 && toks[j - 1].is_ident(text, "let");
             let in_let =
                 after_let(k) || (k > 0 && toks[k - 1].is_ident(text, "mut") && after_let(k - 1));
@@ -959,8 +862,6 @@ impl Sinks {
             {
                 return Ok(None);
             }
-            // A closure's `|s, name|`, or what a match arm or an `if let`
-            // takes out (`Some(name) =>`), around `at`: handed on too.
             if t.is_ident(text, name)
                 && ((closure_param(text, toks, k) && depth[k] <= lowest)
                     || (taken_out(text, toks, k) && depth[k] <= lowest + 1))
@@ -981,8 +882,6 @@ impl Sinks {
                         format!("ツールチップの `{name}` の let の終わりが見つからない"),
                     )
                 })?;
-            // `let tip = other;` hands on a value made elsewhere: making it
-            // twice changes nothing, and could move it twice.
             let init = &toks[eq + 1..semi];
             if init
                 .iter()
@@ -991,8 +890,6 @@ impl Sinks {
                 return Ok(None);
             }
             if let Some(colon) = (k + 1..eq).find(|&j| toks[j].is_punct(text, ":")) {
-                // A `&str` (a table's `&'static str`) finds its faces by its
-                // address, as a parameter does.
                 let ty = match position {
                     Some((place, _)) => tuple_items(text, toks, colon + 1, eq).get(place).copied(),
                     None => Some((colon + 1, eq)),
@@ -1007,8 +904,6 @@ impl Sinks {
                     ),
                 ));
             }
-            // A tuple of three or more: its element is made twice when the
-            // tuple is written out, `(a, format!(…), b)`.
             let (position, element) = match position {
                 Some((place, size)) if size > 2 => {
                     match tuple_items(text, toks, eq + 1, semi).get(place) {
@@ -1039,8 +934,6 @@ impl Sinks {
                     ),
                 ));
             }
-            // Every later use in the let's block is a tooltip's, up to a
-            // `let` of the same name (in a block inside, only to its end).
             let mut j = semi + 1;
             while j < toks.len() && depth[j] >= depth[k] {
                 if toks[j].is_ident(text, "let") && pattern(text, toks, j, name).is_some() {
@@ -1078,8 +971,6 @@ impl Sinks {
     }
 }
 
-/// A tooltip that can't be made twice: where it's used, the line of the
-/// `let` that makes it, and why.
 struct Note {
     line: usize,
     let_line: usize,
@@ -1090,15 +981,10 @@ struct Binding {
     let_at: usize,
     eq: usize,
     semi: usize,
-    /// Which of a pair `let (a, b)` the variable is.
     position: Option<usize>,
-    /// In a longer tuple written out, the tokens of the variable's element.
     element: Option<(usize, usize)>,
 }
 
-/// Whether `let` at `k` binds `name`: `let name =`, `let mut name =`, or one
-/// of a tuple's, `let (a, b) =`. Its place in the tuple and the tuple's size,
-/// and the `=`.
 fn pattern(
     text: &str,
     toks: &[Tok],
@@ -1130,8 +1016,6 @@ fn pattern(
     }
 }
 
-/// The items of a tuple that is all of `start..end` (`(a, b, c)`), as token
-/// ranges; none when it isn't one.
 fn tuple_items(text: &str, toks: &[Tok], start: usize, end: usize) -> Vec<(usize, usize)> {
     match (start < end).then(|| matching(toks, start)).flatten() {
         Some(close) if toks[start].kind == Kind::Open('(') && close + 1 == end => {
@@ -1141,7 +1025,6 @@ fn tuple_items(text: &str, toks: &[Tok], start: usize, end: usize) -> Vec<(usize
     }
 }
 
-/// `&str` or `&'static str`.
 fn is_str_ref(text: &str, ty: &[Tok]) -> bool {
     match ty {
         [amp, s] => amp.is_punct(text, "&") && s.is_ident(text, "str"),
@@ -1152,7 +1035,6 @@ fn is_str_ref(text: &str, ty: &[Tok]) -> bool {
     }
 }
 
-/// Whether the token at `k` is one of a closure's parameters: `|s, name|`.
 fn closure_param(text: &str, toks: &[Tok], k: usize) -> bool {
     let bar = |j: usize| toks[j].is_punct(text, "|");
     let between = |j: usize| toks[j].kind == Kind::Ident || toks[j].is_punct(text, ",");
@@ -1174,8 +1056,6 @@ fn closure_param(text: &str, toks: &[Tok], k: usize) -> bool {
     }
 }
 
-/// Whether the token at `k` is what a match arm or an `if let` takes out of
-/// a variant: `Some(name) =>`, `Some(name) if …`, `if let Some(name) =`.
 fn taken_out(text: &str, toks: &[Tok], k: usize) -> bool {
     k >= 2
         && toks[k - 1].kind == Kind::Open('(')
@@ -1189,7 +1069,6 @@ fn taken_out(text: &str, toks: &[Tok], k: usize) -> bool {
         })
 }
 
-/// Each token's depth in brackets of any kind.
 fn depths(toks: &[Tok]) -> Vec<usize> {
     let mut d = 0usize;
     toks.iter()
@@ -1207,7 +1086,6 @@ fn depths(toks: &[Tok]) -> Vec<usize> {
         .collect()
 }
 
-/// The bracket that closes the one at `open`.
 fn matching(toks: &[Tok], open: usize) -> Option<usize> {
     let mut depth = 0usize;
     for (j, t) in toks.iter().enumerate().skip(open) {
@@ -1225,7 +1103,6 @@ fn matching(toks: &[Tok], open: usize) -> Option<usize> {
     None
 }
 
-/// The arguments between `open` and `close`, as token ranges.
 fn args(text: &str, toks: &[Tok], open: usize, close: usize) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut depth = 0usize;
@@ -1247,7 +1124,6 @@ fn args(text: &str, toks: &[Tok], open: usize, close: usize) -> Vec<(usize, usiz
     out
 }
 
-/// A function's body braces, from its `fn`.
 fn fn_body(toks: &[Tok], fn_at: usize) -> Option<(usize, usize)> {
     let params = (fn_at..toks.len()).find(|&j| toks[j].kind == Kind::Open('('))?;
     let after = matching(toks, params)?;
@@ -1285,7 +1161,6 @@ fn rel_in_crate(dir: &Path, file: &Path) -> PathBuf {
         .unwrap_or(f)
 }
 
-/// The path with `..` and `.` folded, whether or not it exists.
 fn clean(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
@@ -1300,7 +1175,6 @@ fn clean(p: &Path) -> PathBuf {
     out
 }
 
-/// What's between a `"…"`'s quotes; None for r"" b"" and an unclosed one.
 fn quoted(lit: &str) -> Option<&str> {
     lit.strip_prefix('"')?.strip_suffix('"')
 }
@@ -1320,7 +1194,6 @@ fn write_if_changed(path: &Path, text: &str) -> Result<(), String> {
     std::fs::write(path, text).map_err(|e| format!("{} を書けない: {e}", path.display()))
 }
 
-/// Where an item starts (at its `pub`, after its attributes), from its `mod`.
 fn item_start(text: &str, toks: &[Tok], mod_at: usize) -> usize {
     let mut i = mod_at;
     if i > 0 && toks[i - 1].kind == Kind::Close(')') {
@@ -1350,9 +1223,7 @@ fn item_start(text: &str, toks: &[Tok], mod_at: usize) -> usize {
     i
 }
 
-/// The item's `#[path = "…"]`: ((the attribute's start, end), the path).
 fn path_attribute(text: &str, toks: &[Tok], start: usize) -> Option<((usize, usize), String)> {
-    // Back over the attributes, `# [ … ]` at a time.
     let mut end = start;
     while end >= 1 && toks[end - 1].kind == Kind::Close(']') {
         let mut j = end - 1;
@@ -1387,7 +1258,6 @@ fn path_attribute(text: &str, toks: &[Tok], start: usize) -> Option<((usize, usi
     None
 }
 
-/// Puts `call` just inside the root's own `fn main() {`, on that line.
 fn main_call(text: &str, toks: &[Tok], call: &str, edits: &mut Vec<Edit>) -> bool {
     let mut depth = 0i32;
     for i in 0..toks.len() {
@@ -1413,13 +1283,12 @@ fn main_call(text: &str, toks: &[Tok], call: &str, edits: &mut Vec<Edit>) -> boo
 }
 
 fn apply(text: &str, mut edits: Vec<Edit>) -> String {
-    // An insertion at a position goes before a swap that starts there.
     edits.sort_by_key(|e| (e.0, e.1 != e.0, e.1));
     let mut out = String::with_capacity(text.len() + edits.len() * 40);
     let mut at = 0;
     for (s, e, with) in edits {
         if s < at {
-            continue; // overlapping swaps: the first one stays
+            continue;
         }
         out.push_str(&text[at..s]);
         out.push_str(&with);
@@ -1429,8 +1298,6 @@ fn apply(text: &str, mut edits: Vec<Edit>) -> String {
     out
 }
 
-/// The root with its `#![…]` and `//!` blanked (lines and columns kept), and
-/// the attributes taken out.
 fn blank_inner_attributes(text: &str) -> (String, Vec<String>) {
     let toks = lex(text);
     let mut out: Vec<u8> = text.as_bytes().to_vec();
@@ -1477,7 +1344,6 @@ fn blank_inner_attributes(text: &str) -> (String, Vec<String>) {
         i += 1;
     }
     let s = String::from_utf8(out).unwrap_or_default();
-    // A `//!` line becomes a plain comment.
     let s = s
         .lines()
         .map(|l| {
@@ -1503,12 +1369,7 @@ fn squash(s: &str) -> String {
     s.split_whitespace().collect::<String>()
 }
 
-/// Whether a literal no table has looks like words someone reads: a
-/// sentence, or one word, capitalised or not ("Archived", "added"). Not
-/// an identifier or a key (`thread_id`, `threadId`, `header-title`), a
-/// path or address, a date pattern, or a format with nothing but holes.
 fn looks_like_words(content: &str) -> bool {
-    // A format's holes aren't words: "{name} {v}" is none.
     let mut bare = String::new();
     let mut depth = 0usize;
     for c in content.chars() {
@@ -1532,8 +1393,6 @@ fn looks_like_words(content: &str) -> bool {
     let first_ok = chars.next().is_some_and(|c| c.is_ascii_alphabetic());
     first_ok && chars.all(|c| c.is_ascii_lowercase() || c == '\'')
 }
-
-// ── Tokens ──────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
@@ -1566,8 +1425,6 @@ impl Tok {
     }
 }
 
-/// Rust's tokens with the comments left out: enough to know where the
-/// literals are.
 pub fn lex(text: &str) -> Vec<Tok> {
     let b = text.as_bytes();
     let mut toks = Vec::new();
@@ -1684,7 +1541,6 @@ pub fn lex(text: &str) -> Vec<Tok> {
     toks
 }
 
-/// Where r"…", r#"…"# or br"…" ends.
 fn raw_string(b: &[u8], i: usize) -> Option<usize> {
     let mut j = i;
     if b.get(j) == Some(&b'b') || b.get(j) == Some(&b'c') {
@@ -1714,25 +1570,12 @@ fn raw_string(b: &[u8], i: usize) -> Option<usize> {
     }
 }
 
-// ── Where a literal is ──────────────────────────────────────────────────
-
-/// Around a literal: may it be swapped, should it stay English, is it a
-/// `format!`'s format.
 pub struct Context {
-    /// Where words for the screen can be (not a test, an attribute, a
-    /// const, a comparison or a pattern).
     pub ui: bool,
-    /// Why it stays English where it's written: what it's handed to (an id,
-    /// a screen reader's name, the log, JSON, an index).
     pub keep: Option<String>,
-    /// The first argument of `format!(…)`: (`format`'s start, the `(`'s end).
     pub format_head: Option<(usize, usize)>,
 }
 
-/// A literal in a pattern or compared, inside brackets: `Some("failed") =>`,
-/// `Some(("staged", _)) =>`, `if let (Some(why), "off") =`, `==
-/// Some("claude")`. The brackets it's in close, and a match arm's `=>`, a
-/// `|` or a `let`'s `=` follows.
 fn in_pattern(text: &str, toks: &[Tok], i: usize) -> bool {
     let wrapped = i >= 3
         && toks[i - 1].kind == Kind::Open('(')
@@ -1740,7 +1583,6 @@ fn in_pattern(text: &str, toks: &[Tok], i: usize) -> bool {
     if wrapped && matches!(toks[i - 3].text(text), "==" | "!=") {
         return true;
     }
-    // The bracket the literal is directly inside, if it's a `(`.
     let mut depth = 0usize;
     let open = (0..i).rev().find(|&j| match toks[j].kind {
         Kind::Close(_) => {
@@ -1770,9 +1612,7 @@ fn in_pattern(text: &str, toks: &[Tok], i: usize) -> bool {
 #[derive(Default)]
 struct Walk {
     frames: Vec<Frame>,
-    /// After `#[cfg(test)]` or `#[test]`: the next `{` is skipped.
     test_next: bool,
-    /// Inside a const or static item (until its `;`), at this depth.
     const_depth: Option<usize>,
 }
 
@@ -1785,12 +1625,9 @@ struct Frame {
     arg: usize,
     skip: bool,
     attr: bool,
-    /// `x[…]`: a key, not words.
     index: bool,
 }
 
-/// Words handed straight to these stay English: they aren't drawn, or they're
-/// a name (an id, a screen reader's), or text is matched against them.
 const KEEP: &[&str] = &[
     "aria_label",
     "icon",
@@ -1839,7 +1676,6 @@ const KEEP: &[&str] = &[
     "eq",
 ];
 
-/// Words that come before a `[` that starts an array, not an index.
 const BEFORE_ARRAY: &[&str] = &[
     "in", "return", "else", "match", "if", "mut", "ref", "move", "let",
 ];
@@ -1911,8 +1747,6 @@ impl Walk {
             self.test_next = false;
         }
         if attr {
-            // #[cfg(test)], #[test], and #[cfg(feature = "automation")]: the
-            // scripted build's own, where it's always English.
             let body: String = toks[i + 1..].iter().take(6).map(|t| t.text(text)).collect();
             if body.starts_with("cfg(test)")
                 || body.starts_with("test]")
@@ -1942,7 +1776,6 @@ impl Walk {
             || matches!(next, "==" | "!=" | "=>" | "|")
             || in_pattern(text, toks, i);
         let ui = !in_skip && self.const_depth.is_none() && !compared;
-        // The nearest call (through `{` and `[`).
         let call = self
             .frames
             .iter()
@@ -1976,7 +1809,6 @@ mod tests {
         table: String,
     }
 
-    /// Copies `src` as src/a.rs with `table` as its table, the way a crate is.
     fn copy_as(side: Side, src: &str, table: &str) -> Copied {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -2061,7 +1893,6 @@ mod tests {
             "Some(\"Copy\") | None => 1, _ if x == Some(\"Copy\") => 2, _ => match (x, y) { (Some(_), \"Copy\") => 3"
         ));
         assert!(c.text.contains("if let Some((\"Copy\", r)) = p"));
-        // An arm's words aren't its pattern.
         assert!(
             c.text
                 .contains("A => b(crate::ja::t(&crate::ja::TABLE[0]), 1)"),
@@ -2134,7 +1965,6 @@ mod tests {
             tables: BTreeMap::new(),
             report: Report::default(),
         };
-        // A folder can't be written over as a file.
         m.write(&std::env::temp_dir(), "x");
         assert_eq!(m.report.errors.len(), 1);
     }
@@ -2239,8 +2069,6 @@ mod tests {
 
     #[test]
     fn a_closure_s_or_a_pattern_s_tooltip_is_handed_on_not_an_earlier_let() {
-        // Each `tip` here is a value handed on (a closure's parameter, what a
-        // match arm takes out), not the `let tip` above them.
         let src = "fn f(e: E, j: Option<String>, k: Option<String>) -> E {\n    let tip = format!(\"In {p}\");\n    let e = e.aria_label(tip.clone()).tip(tip);\n    let e = e.when_some(j, |s, tip| s.tip(tip));\n    match k {\n        Some(tip) if ok => e.tip(tip),\n        Some(tip) => e.tip(tip),\n        None => e,\n    }\n}\n";
         let c = copy_as(
             Side::Gpui,
@@ -2262,7 +2090,6 @@ mod tests {
             "{}",
             c.text
         );
-        // Made by a match, its element can't be reached: noted.
         let src = "fn f(e: E) -> E {\n    let (a, tip, b) = match x { _ => (1, format!(\"In {p}\"), 2) };\n    tipped!(e, tip)\n}\n";
         let c = copy_as(Side::Gpui, src, table);
         assert_eq!(c.report.notes.len(), 1, "{:?}", c.report.notes);
@@ -2271,7 +2098,6 @@ mod tests {
             "{:?}",
             c.report.notes
         );
-        // A `&str` (a table's literal) finds its faces by its address.
         let src = "fn f(e: E) -> E {\n    let (a, tip, b): (u8, &str, u8) = match x { _ => (1, \"In\", 2) };\n    let one: &'static str = \"In\";\n    tipped!(e, tip).tip(one)\n}\n";
         let c = copy_as(Side::Gpui, src, &format!("{table}tip-method: tip\n"));
         assert!(c.report.notes.is_empty(), "{:?}", c.report.notes);

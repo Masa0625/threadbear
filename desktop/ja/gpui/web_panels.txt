@@ -1,18 +1,9 @@
-# gpui/src/web_panels.rs の画面の文(書き方は desktop/ja/README.md)。
-# パッチの Web のパネルと Convex のダッシュボード。.tip(…) は無い。
-# ツールチップは PushButton(push_button.txt の keep で、名前は英語・表示は日本語)と、
-# tipped・tipped_as・bar_button(keep の無い helper。String で受けるので置き場が
-# 分からない)を通る。後ろの物に渡る文は tip にして、名前も表示も英語のまま残す。
-
-# Open in browser は、バーのボタンのツールチップ(名前)と、PushButton の札の両方に
-# 使う。表では tip にし、札を描く所だけを日本語にする。
 replace: PushButton::new("web-panel-open",
 with: PushButton::new("web-panel-open", crate::ja_tip::shown_str(
 replace: , open.tip.clone())
 with: ), open.tip.clone())
 tip "Open in browser" = "ブラウザで開く"
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "copy"  # ページに送る編集の命令の名前
 skip "cut"  # 同上
 skip "paste"  # 同上
@@ -43,23 +34,19 @@ skip "url"  # 同上
 skip "buttons"  # 同上
 skip "web"  # 同上
 
-# バーのボタン(bar_button は String のツールチップを tipped に渡す。名前なので英語)
 tip "Make a new deploy key for {selected}, if the old one was revoked" = "古いキーが取り消されたら、{selected} の新しいデプロイキーを作る"
 tip "Reload panel" = "パネルを読み込み直す"
 tip "Open {selected} in browser" = "{selected} をブラウザで開く"
 tip "Back" = "戻る"
 tip "Reload the panel's own page" = "パネルのページを読み込み直す"
 
-# Convex の見出し(tipped・tipped_as に渡る文。名前なので英語)
 tip "Choose the deployment shown in this panel" = "このパネルに出すデプロイメントを選ぶ"
 tip "Couldn't load other deployments: {}" = "ほかのデプロイメントを読み込めませんでした: {}"
 
-# デプロイメントのメニュー(ネイティブのメニュー。ツールチップは表示だけ)
 "Show {} in this panel" = "{} をこのパネルに出す"
 "Refresh deployments" = "デプロイメントを読み直す"
 "Look up this project's development and production deployments again" = "このプロジェクトの開発用と本番用のデプロイメントを、もう一度調べる"
 
-# ページを出せない時
 "Couldn't show this page: {why}" = "このページを出せませんでした: {why}"
 "This page can't show here." = "このページはここに出せません。"
 "its folder couldn't be read" = "フォルダを読めませんでした"
@@ -73,7 +60,6 @@ tip "Couldn't load other deployments: {}" = "ほかのデプロイメントを�
 "This page shows here once the web runtime is installed (Settings > General)." = "Web ランタイムを入れると、このページはここに出ます(設定 > 一般)。"
 "Starting the web runtime…" = "Web ランタイムを始めています…"
 
-# デプロイキーとサインイン
 "The runner's answer had no deploy key in it." = "ランナーの答えに、デプロイキーが入っていませんでした。"
 "The sign-in didn't finish. Try again." = "サインインが終わりませんでした。もう一度試してください。"
 "Approve the sign-in in your browser." = "ブラウザでサインインを認めてください。"

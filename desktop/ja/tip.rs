@@ -1,22 +1,6 @@
-// A tooltip's two faces in the Japanese copy (desktop/ja/README.md): its
-// name, which the activity log and the scripts know a control by and which
-// stays English, and the words it shows.
-//
-// The words are Japanese only when the code made them from a table, which
-// is told by how they arrive, never by how they read: a person's words or a
-// runner's that read like a table entry are shown as they are.
-// - `faces` makes a tooltip twice, in English for its name and again for its
-//   words. The mirror puts it in every `.tip(…)` and `tipped!` of a copied
-//   file, and `both` in the `let` of a variable that becomes one.
-// - A table's own `&'static str` (`t(&TABLE[i])`) is known by its address,
-//   so one handed on through a parameter, or kept as a SharedString by
-//   `keep`, finds its English name and its Japanese wherever it ends up.
-// - A `made` function's answer (the updates icon's) is known by being its
-//   latest answer, exactly (`threadbear_core::ja::made_shown`).
 use gpui_kit::SharedString;
 use threadbear_core::ja;
 
-/// A tooltip: the name a click on it is logged and found by, and its words.
 pub(crate) struct Faces {
     pub(crate) name: SharedString,
     pub(crate) shown: SharedString,
@@ -30,18 +14,12 @@ impl Faces {
         }
     }
 
-    /// A tooltip that came as a SharedString, as most do: a table's literal
-    /// kept by `keep`, or a `made` answer, gets its Japanese; anything else
-    /// is shown as it is.
     pub(crate) fn of_shared(text: SharedString) -> Faces {
         known(&text).unwrap_or_else(|| Faces::same(text))
     }
 }
 
-/// The faces of words the code made from a table, told by their address or
-/// as a `made` answer; None for anything else.
 fn known(text: &str) -> Option<Faces> {
-    // In English every word is already its own name: nothing to look up.
     if !ja::screen_is_japanese() {
         return None;
     }
@@ -57,14 +35,12 @@ fn known(text: &str) -> Option<Faces> {
     })
 }
 
-/// The table entry `text` is one of the literals of, by its address.
 fn entry(text: &str) -> Option<(&'static str, &'static str)> {
     ja::entry_of(text, &ja::TABLE)
         .or_else(|| ja::entry_of(text, &crate::ja_table::TABLE))
         .copied()
 }
 
-/// What a tooltip can be made from.
 pub(crate) trait IntoFaces {
     fn into_faces(self) -> Faces;
 }
@@ -118,9 +94,6 @@ impl<T: IntoFaces> IntoFaces for Both<T> {
     }
 }
 
-/// A tooltip made twice: `make` in English for its name, and again for its
-/// words while the screen is Japanese. Anything in it a person or a runner
-/// wrote comes out the same both times, so it's shown as it is.
 pub(crate) fn faces<T: IntoFaces>(make: impl Fn() -> T) -> Faces {
     if !ja::on() {
         return make().into_faces();
@@ -132,8 +105,6 @@ pub(crate) fn faces<T: IntoFaces>(make: impl Fn() -> T) -> Faces {
     }
 }
 
-/// A variable's value made twice, as `faces` does, for a variable that
-/// becomes a tooltip later (the mirror wraps its `let`).
 #[derive(Clone)]
 pub(crate) struct Both<T> {
     en: T,
@@ -154,8 +125,6 @@ pub(crate) fn both<T>(make: impl Fn() -> T) -> Both<T> {
 }
 
 impl<A, B> Both<(A, B)> {
-    /// `let (tip, text) = …`: the first is the tooltip, the second the
-    /// words as made for the screen.
     #[allow(
         dead_code,
         reason = "used only while a copied file has such a pair; gpui allows dead code outside the automation build"
@@ -174,7 +143,6 @@ impl<A, B> Both<(A, B)> {
         }
     }
 
-    /// `let (text, tip) = …`: the second is the tooltip.
     pub(crate) fn split_1(self) -> (A, Both<B>) {
         let (other_en, en) = self.en;
         match self.ja {
@@ -190,9 +158,6 @@ impl<A, B> Both<(A, B)> {
     }
 }
 
-/// A tooltip handed on as a SharedString (a PushButton's, `tipped_as`'s): a
-/// table's literal keeps its address, as the English name, so the tooltip
-/// it ends up in still finds the Japanese.
 pub(crate) fn keep<T: Into<SharedString> + AsRef<str>>(text: T) -> SharedString {
     if !ja::screen_is_japanese() {
         return text.into();
@@ -203,8 +168,6 @@ pub(crate) fn keep<T: Into<SharedString> + AsRef<str>>(text: T) -> SharedString 
     }
 }
 
-/// The words to draw for a table literal that's also an id or a screen
-/// reader's name, so stayed English where it was written (`tip` lines).
 pub(crate) fn shown_str(text: &'static str) -> &'static str {
     if !ja::screen_is_japanese() {
         return text;
@@ -225,7 +188,6 @@ pub(crate) fn shown_str(text: &'static str) -> &'static str {
 mod tests {
     use super::*;
 
-    /// A row of core's table, by its English (desktop/ja/core/updates.txt).
     fn row(en: &str) -> &'static (&'static str, &'static str) {
         ja::TABLE
             .iter()
@@ -263,7 +225,6 @@ mod tests {
     #[test]
     fn a_person_s_words_that_read_like_the_table_are_shown_as_they_are() {
         let _ja = Japanese::on();
-        // A runner's message, a thread's title: the same words as an entry.
         let runner = "Up".to_owned() + "dates";
         assert_eq!(pair(&faces(|| runner.clone())), ("Updates", "Updates"));
         assert_eq!(
@@ -281,16 +242,12 @@ mod tests {
     fn a_table_literal_finds_its_faces_wherever_it_s_handed() {
         let _ja = Japanese::on();
         let updates = row("Updates");
-        // Made outside `faces` (a parameter's value), in Japanese: the name
-        // goes back to English.
         let handed: &'static str = ja::t(updates);
         assert_eq!(handed, "更新");
         assert_eq!(pair(&faces(|| handed)), ("Updates", "更新"));
-        // Kept as a SharedString by a PushButton, then a tooltip.
         let kept = keep(handed);
         assert_eq!(kept.as_str(), "Updates");
         assert_eq!(pair(&Faces::of_shared(kept.clone())), ("Updates", "更新"));
-        // Copied into a String on the way, it's someone's words again.
         assert_eq!(
             pair(&faces(|| handed.to_owned())),
             ("更新", "更新"),

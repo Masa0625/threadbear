@@ -1,6 +1,3 @@
-# gpui/src/tips.rs: ツールチップを描く所。名前(記録と、自動操作が部品を探す
-# 名前)は英語のまま、表示はコードが作った日本語にする(desktop/ja/tip.rs)。
-# tip は今までと同じ物を受け、ja_tip は写したファイルが作る 2 つの顔を受ける。
 replace: fn tip(self, text: impl Into<SharedString>) -> Self {
 with: fn tip(self, text: impl Into<SharedString>) -> Self { self.ja_tip(crate::ja_tip::Faces::of_shared(text.into())) } fn ja_tip(self, ja_faces: crate::ja_tip::Faces) -> Self {
 replace: let text: SharedString = text.into();

@@ -1,21 +1,11 @@
-# gpui/src/rows/cards.rs の画面の文(書き方は desktop/ja/README.md)。
-# スレッドの中で、エージェントが待つカード(許可・質問・秘密の値・計画・レビュー、
-# 別のランナーからのスレッドの依頼)。コマンド・出力・ファイル名・質問と選び・
-# 依頼文・理由・計画の本文は、エージェントやランナーから来た文で、表には無い。
-# 表にあるのは、このファイルが書く決まった文だけ。
 tip-method: tip
 
-# カードのボタン(pill)は、札の文を読み上げの名前(aria_label)にも使う(specs は
-# "Allow 4" や "Deny all" で押す)。札は日本語にし、名前は英語に戻す。表の文は
-# 置き場で英語が分かる(desktop/ja/tip.rs の keep)。
 replace: .aria_label(SharedString::from(title.to_owned()))
 with: .aria_label(crate::ja_tip::keep(title))
 replace: .aria_label(SharedString::from(toggle_title.to_owned()))
 with: .aria_label(crate::ja_tip::keep(toggle_title))
 replace: .aria_label(SharedString::from(threadbear_core::ja::t(
 with: .aria_label(crate::ja_tip::keep(threadbear_core::ja::t(
-# format! や .to_owned() で String になった札は置き場が分からないので、作る式を
-# 閉包にして、英語でもう一度作り(ja::english)、名前にする。
 replace: let allow_words =
 with: let allow_words_make = ||
 replace: "Allow {count}");
@@ -29,15 +19,11 @@ with: let open_title = open_title_make(); let open_name = threadbear_core::ja::e
 replace: pill(("open-review", ix), &open_title, false, true, None, cx)
 with: pill(("open-review", ix), &open_title, false, true, None, cx).aria_label(open_name)
 
-# const の文(表では訳せない)を、使う所で選ぶ。PLAN_INFO はツールチップで、
-# 写しが二度作る(英語の回は名前、日本語の回は表示)。PROMISE は表示だけ。
-# PROMISE_TIP は、言語が決まった後の変数を通ってツールチップになるので、英語のまま。
 replace: (PLAN_INFO)
 with: (if threadbear_core::ja::on() { "先に計画: エージェントは読んで計画を立て、あなたが認めるまで何も変えません。「進める」で、スレッドの前の権限のまま始めます。「送り返す…」か、何か書くと、もう一度考え直させます。" } else { PLAN_INFO })
 replace: PROMISE.to_owned()
 with: (if threadbear_core::ja::on() { "会話には入れず、このエージェントのコマンドが 24 時間だけ読める非公開のファイルに置きます" } else { PROMISE }).to_owned()
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "cmd"  # 部品の id
 skip "url"  # 同上
 skip "title"  # 同上
@@ -54,7 +40,6 @@ skip "deny"  # 同上
 skip "clock"  # 記号の名前
 skip "a secret's field"  # 別のファイル(unsent.rs)の文に入るかけら。その文に表ができたら訳す
 
-# 別のランナーからの、スレッドを始める依頼
 "Reading the request…" = "依頼を読んでいます…"
 "Asks before edits" = "編集の前に聞く"
 "Auto" = "自動"
@@ -77,7 +62,6 @@ skip "a secret's field"  # 別のファイル(unsent.rs)の文に入るかけら
 "Don't" = "始めない"
 "Don't start it; the asking thread is told no" = "始めない。頼んだスレッドには断ったと伝えます"
 
-# 許可のカード
 "Allow" = "許可"
 "Let it do this once (Return)" = "今回だけさせる(Return)"
 "Always allow" = "いつも許可"
@@ -85,7 +69,6 @@ skip "a secret's field"  # 別のファイル(unsent.rs)の文に入るかけら
 "Deny" = "拒否"
 "Don't let it do this; the agent is told no" = "させない。エージェントには断ったと伝えます"
 
-# 呼び出しが重なった許可のカード
 "Make these {} changes?" = "この {} 件の変更をしますか?"
 "Allow these {} steps?" = "この {} 件の手順を許可しますか?"
 "Allow this one" = "これを許可する"
@@ -96,20 +79,17 @@ skip "a secret's field"  # 別のファイル(unsent.rs)の文に入るかけら
 "Deny all" = "すべて拒否"
 "Don't let it do any of these; the agent is told no" = "どれもさせない。エージェントには断ったと伝えます"
 
-# 質問のカード
 "Answered" = "答えました"
 "Send answer" = "答えを送る"
 "Send your answers to the agent" = "答えをエージェントに送る"
 "Something else" = "ほかの答え"
 
-# 秘密の値のカード
 "Save securely" = "安全に保存"
 "Save it to a private file for the agent (Return)" = "エージェント用の非公開のファイルに保存する(Return)"
 "Decline" = "断る"
 "Don't give it; the agent is told you declined" = "渡さない。エージェントには断ったと伝えます"
 "Paste the secret" = "秘密の値を貼る"
 
-# 計画のカード
 "Plan" = "計画"
 "Waiting for you" = "あなたを待っています"
 "Sent back" = "送り返しました"
@@ -125,7 +105,6 @@ skip "a secret's field"  # 別のファイル(unsent.rs)の文に入るかけら
 "Show less of it" = "短くして見る"
 "Show the whole plan" = "計画の全部を見る"
 
-# レビューのカード
 "Waiting for your review" = "あなたのレビューを待っています"
 "Picked {}. {}" = "{} を選びました。{}"
 "Notes sent" = "メモを送りました"
@@ -136,7 +115,5 @@ skip "a secret's field"  # 別のファイル(unsent.rs)の文に入るかけら
 "Open review" = "レビューを開く"
 "Open the images side by side to pick and reply" = "画像を並べて開き、選んで返事する"
 "Open the review to look at the images and what was sent" = "レビューを開いて、画像と送った物を見る"
-# 一つずつの画像のツールチップは、読み上げの名前(aria_label)にも使い、変数が
-# 二か所で使われて二度作れない。名前なので英語のまま。
 tip "Open the review on {}" = "{} でレビューを開く"
 tip "Look at {} and what was sent" = "{} と送った物を見る"

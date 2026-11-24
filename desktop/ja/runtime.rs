@@ -1,32 +1,16 @@
-// The language of the screen's words (`threadbear_core::ja`), desktop/ja/README.md.
-//
-// English unless the app turns Japanese on as it starts (desktop/ja/start.rs).
-// Tests never start the app, so they run in English.
-//
-// The mirror (desktop/ja/mirror.rs) puts `t(&TABLE[i])` where a table's literal
-// was and `ja_format!("日本語", "English", ...)` where its `format!` was, with
-// the arguments as they were. Both answer English inside `english(...)`: a
-// tooltip is made twice, once in English for its name (what the activity log
-// and the scripts know a control by) and once for the words it shows.
 use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static JAPANESE: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
-    /// How many `english` calls this thread is inside.
     static ENGLISH: Cell<u32> = const { Cell::new(0) };
-    /// The language for this thread alone (a test's), over the app's.
     static HERE: Cell<Option<bool>> = const { Cell::new(None) };
-    /// The last answer of each `made` producer: (producer, English, Japanese).
     static MADE: RefCell<Vec<(&'static str, String, String)>> = const { RefCell::new(Vec::new()) };
 }
 
-// `pub static TABLE: [(&str, &str); N]`, written by the build script from
-// desktop/ja/core/: (English, Japanese), each the literal's text as written.
 include!(concat!(env!("OUT_DIR"), "/ja/table.rs"));
 
-/// Whether the screen's words are Japanese. Called once, as the app starts.
 pub fn set_japanese(on: bool) {
     JAPANESE.store(on, Ordering::Relaxed);
 }
@@ -140,7 +124,6 @@ mod tests {
 
     static ENTRY: (&str, &str) = ("Dismiss", "閉じる");
 
-    /// The same words as `ENTRY`'s English, somewhere else in memory.
     fn typed() -> String {
         "Dis".to_owned() + "miss"
     }
@@ -186,10 +169,8 @@ mod tests {
             made_shown("Dismiss\nRunner words").as_deref(),
             Some("閉じる\nRunner words")
         );
-        // Only the whole answer, never a line of it or an entry on its own.
         assert_eq!(made_shown("Dismiss"), None);
         assert_eq!(made_shown("Runner words"), None);
-        // A producer's next answer replaces its last.
         assert_eq!(made("p", || "Runner words".to_owned()), "Runner words");
         assert_eq!(made_shown("Dismiss\nRunner words"), None);
         set_here(None);

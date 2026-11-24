@@ -1,9 +1,3 @@
-// The updates rules with the screen in Japanese (desktop/ja/README.md), through
-// the real functions: Japanese is on for this whole test program, which is
-// why it's one of its own. The words drawn are Japanese, the updates icon's
-// tooltip is named in English (the activity log's and the scripts' word for
-// it) and shown in Japanese, and words a runner or a person wrote stay as
-// they are even when they read like an entry in the table.
 use serde_json::json;
 use threadbear_core::{ja, updates};
 
@@ -11,7 +5,6 @@ fn runner(v: serde_json::Value) -> updates::RunnerUpdates {
     updates::RunnerUpdates::decode(&v).expect("the runner's updates decode")
 }
 
-/// The mock runner's two CLIs (mock-runner/server.mjs), one held back.
 fn clis(reason: &str) -> Vec<updates::CliStatus> {
     updates::decode_clis(&json!([
         { "provider": "claude", "path": "/x/claude", "managedBy": "cli", "installedVersion": "2.1.311", "latestVersion": "2.1.312", "status": "behind", "policy": "auto", "inUse": [], "checkedAt": "2026-11-11T01:00:00.000Z",
@@ -21,8 +14,6 @@ fn clis(reason: &str) -> Vec<updates::CliStatus> {
     ]))
 }
 
-/// A release of Mike's with 12 changes, named by its day (no date sent, so
-/// the day doesn't hang on this Mac's time zone).
 fn from_mike(extra: serde_json::Value) -> updates::RunnerUpdates {
     let mut v = json!({ "state": "idle", "oldRunners": [], "upstream": {
         "state": "available", "release": { "tag": "release/2026-11-06", "changes": 12, "subjects": [] } } });
@@ -118,8 +109,6 @@ fn the_icon_tooltip_is_named_in_english_and_shown_in_japanese() {
 #[test]
 fn a_button_s_tooltip_handed_to_a_plain_helper_stays_english() {
     ja::set_japanese(true);
-    // The panel hands it to a helper that turns it into a SharedString, so
-    // it's both the tooltip's name and the screen reader's: English.
     let launcher = runner(
         json!({ "state": "idle", "oldRunners": [], "launcherChanged": true, "launcherStages": true }),
     );
@@ -136,7 +125,6 @@ fn a_button_s_tooltip_handed_to_a_plain_helper_stays_english() {
 #[test]
 fn a_runner_s_words_that_read_like_the_table_stay_as_they_are() {
     ja::set_japanese(true);
-    // The runner's own problem, and a hold's reason, word for word an entry.
     let mike = from_mike(json!({ "webRuntimeProblem": "Updates" }));
     let clis = clis("Every change");
     let tip = updates::icon_tooltip(&updates::AppSide::default(), Some(&mike), &clis);
@@ -144,8 +132,6 @@ fn a_runner_s_words_that_read_like_the_table_stay_as_they_are() {
     assert!(shown.starts_with("更新\nUpdates\n"), "{shown}");
     assert!(shown.ends_with("理由: Every change"), "{shown}");
     assert!(updates::runner_lines(Some(&mike)).contains(&"Updates".to_owned()));
-    // Only the whole tooltip has a Japanese face, never a line of it, so a
-    // banner of the runner's that says "Updates" is shown as it is.
     assert_eq!(ja::made_shown("Updates"), None);
     assert_eq!(ja::made_shown("12 new changes from Mike"), None);
 }

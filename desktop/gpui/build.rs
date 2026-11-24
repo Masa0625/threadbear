@@ -25,7 +25,6 @@ fn main() {
             println!("cargo:rustc-link-arg-bins=-Wl,--stack,8388608");
         }
     }
-    // この写しの app のソース(画面の日本語、desktop/ja/README.md)。
     #[path = "../ja/mirror.rs"]
     mod ja;
     ja::gpui();

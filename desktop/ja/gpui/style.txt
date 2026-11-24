@@ -1,21 +1,9 @@
-# gpui/src/style.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
-# 設定 › 一般 › 見た目 のタイルの名前、アクセントの色の名前、フォントの名前。
-#
-# - タイルの名前(Appearance::title)は、タイルの下の文と、はじめのカード(hello.rs)
-#   の選び。id(settings-look-system)と保存の値は name の方で、英語のまま。
-# - アクセントの色の名前(Accent::title)は、点のツールチップ「Use Plum as the
-#   accent」にだけ入る。その文は名前(読み上げと記録)を兼ねるが、
-#   settings_window.txt が二度作るので、名前は英語、表示は日本語になる。
-# - フォントの名前(Font::title)は、ボタンと選びのメニューの文。
-
-# 見た目のタイル
 "Same as the Mac" = "Mac に合わせる"
 "Same as Windows" = "Windows に合わせる"
 "Same as the system" = "システムに合わせる"
 "Light" = "ライト"
 "Dark" = "ダーク"
 
-# アクセントの色
 "The Mac's accent" = "Mac のアクセント"
 "Blue" = "ブルー"
 "Fur" = "ファー"
@@ -27,13 +15,11 @@
 "Moss" = "モス"
 "Slate" = "スレート"
 
-# フォント
 "System" = "システム"
 "Serif" = "セリフ"
 "Monospaced" = "等幅"
 skip "Allo"  # フォントの固有の名前(フォントの家族の名前にも使う)
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "system"  # 設定のファイルに書く値(Appearance・Accent・Font の name)
 skip "light"  # 同上
 skip "dark"  # 同上

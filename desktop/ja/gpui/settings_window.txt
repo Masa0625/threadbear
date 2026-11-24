@@ -1,25 +1,5 @@
-# gpui/src/settings_window.rs の画面の文(書き方は desktop/ja/README.md)。
-#
-# この窓の文の多くは、記録と自動操作の名前を兼ねる。窓の中の helper(button・
-# switch・menu・icon_button・section・row・look_tile・segmented)が、受けた文を
-# aria_label(読み上げと自動操作の名前)にも、ツールチップにも、id にも渡す。
-# だから helper に渡る文は tip にして、書いた所では英語のまま(表の置き場の
-# &'static str)にし、描く所でだけ日本語にする(下の replace:)。
-#   - 見出し(section の title)は、くまのボタンの名前「Start a thread about …」と、
-#     エージェントへの依頼文にも入る。
-#   - ⓘ の説明(section の about)は、ⓘ の名前とツールチップを兼ねる。
-#   - 左の列の題(Tab::title)は、行の名前と窓の題を兼ねる。
-#   - 見た目の選び(Roomy など)は id(settings-spacing-roomy)の元。
-# section の 4 つ目(_ask)は section_with_body が使わない(画面に出ない)ので skip。
-#
-# 写しの const(FONT_TIP・APPEARANCE_TIP・FULL_SYNC_ABOUT)は英語のまま残る。
-# 表の行をその文から引く手段が仕組みに無いので、表には書かない。
-
-# ツールチップを作る所: Tip の .tip(…)。
 tip-method: tip
 
-# 左の列の題: 行の名前は英語のまま(keep で表の置き場を保ち、ツールチップは日本語)、
-# 描く題と窓の題は日本語。
 replace: title: Some(tab.title().into()),
 with: title: Some(crate::ja_tip::shown_str(tab.title()).into()),
 replace: window.set_window_title(tab.title());
@@ -29,7 +9,6 @@ with: crate::ja_tip::keep(tab.title()),
 replace: .child(tab.title())
 with: .child(crate::ja_tip::shown_str(tab.title()))
 
-# 節の見出しと ⓘ: 名前は英語のまま、描く見出し・ⓘ の中の文・ⓘ のツールチップは日本語。
 replace: .child(title.to_owned())
 with: .child(crate::ja_tip::faces(|| title).shown)
 replace: let (about, title) = (SharedString::from(about.to_owned()), title.to_owned());
@@ -37,52 +16,39 @@ with: let ja_about = crate::ja_tip::faces(|| about); let (about, title) = (ja_ab
 replace: let trigger_tip = about.clone();
 with: let trigger_tip = ja_about.name;
 
-# くまのボタン: 名前「Start a thread about Appearance」は英語、表示は日本語の見出しで。
-# tip は aria_label にも渡るので、写しは let を二度作れない(ツールチップの注意に出る)。
-# ここで二度作り、aria_label には英語の顔を渡す。
 replace: let tip = format!("Start a thread about {title}");
 with: let tip = crate::ja_tip::both(|| { let title = crate::ja_tip::faces(|| title).shown; threadbear_core::ja_format!("「{title}」についてスレッドを始める", "Start a thread about {title}") });
 replace all: .aria_label(tip.clone())
 with: .aria_label(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&tip)).name)
 
-# アクセントの点: 型付きの let なので写しは二度作れない(ツールチップの注意に出る)。
-# match を both で二度作る(英語の顔が名前「Use Plum as the accent」、日本語が表示)。
 replace: let tip: SharedString = match choice {
 with: let tip = { crate::ja_tip::both(|| -> SharedString { match choice {
 replace: _ => format!("Use {} as the accent", choice.title()).into(),
 with: _ => threadbear_core::ja_format!("{}をアクセントにする", "Use {} as the accent", choice.title()).into(), } })
 
-# switch と menu は文を String に写して渡すので、表の置き場が消える。英語の文を
-# 名前に、日本語を表示にした ja::made の答えにして渡す(made_shown で引ける)。
 replace: self.switch_owned(id.to_owned(), on, tip.to_owned(), cx, set)
 with: self.switch_owned(id.to_owned(), on, threadbear_core::ja::made(tip, || crate::ja_tip::shown_str(tip).to_owned()), cx, set)
 replace: self.menu_owned(id.to_owned(), label, face, tip.to_owned(), choices, cx)
 with: self.menu_owned(id.to_owned(), label, face, threadbear_core::ja::made(tip, || crate::ja_tip::shown_str(tip).to_owned()), choices, cx)
 
-# gpui-kit のボタンのツールチップ(名前ではない)は、表示の顔を渡す。
 replace: .tooltip(tip.clone());
 with: .tooltip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&tip)).shown);
 replace all: .tooltip(tip)
 with: .tooltip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&tip)).shown)
 
-# icon_button は tipped(keep の無い helper)に渡すので、keep で表の置き場を保つ。
 replace all: let (hover, secondary, fg) = (
 with: let tip = crate::ja_tip::keep(tip); let (hover, secondary, fg) = (
 
-# 見た目の選び(id の元)と行の名前は、描く所で日本語に。
 replace: .child(c.label)
 with: .child(crate::ja_tip::shown_str(c.label))
 replace: div().child(label).into_any_element(),
 with: div().child(crate::ja_tip::shown_str(label)).into_any_element(),
 
-# 「言語」の行(desktop/ja/language.rs): 見た目の節の一番下、Font の行の下。
 replace: , font, cx),
 with: , font, cx), row(crate::ja_language::label(), crate::ja_language::control(self.app.clone(), self.tab.title(), cx), cx),
-# 自動操作の dump に、選んだ言語と今の画面の言語(features/language.feature)。
 replace: "tab": self.tab.name(),
 with: "tab": self.tab.name(), "language": crate::ja_language::dump(&self.app, cx),
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "gearshape"  # 左の列の記号の名前
 skip "sparkles"  # 同上
 skip "iphone"  # 同上
@@ -100,7 +66,6 @@ skip "macos"  # cfg! の OS の名前
 skip "windows"  # 同上
 skip "claude"  # 提供元の id
 skip "About Threadbear's {title} settings: "  # エージェントへの依頼文(新しいスレッドの箱に入る)。見出しは英語で入る
-# section の _ask(section_with_body が使わない)
 skip "check whether it's installed and working, or why a diagram or panel isn't showing."  # 画面に出ない
 skip "change it, or anything else about how threads run. Most settings aren't shown here, and your agent edits them in runner.json."  # 同上
 skip "explain what a review found, change who reviews, or turn reviews on or off for you."  # 同上
@@ -117,7 +82,6 @@ skip "draft some for you to paste here. Agents can't change them themselves: onl
 skip "change this, or which model and effort new threads start on. Your agent edits them in runner.json."  # 同上
 skip "add several at once. Your agent keeps them in runner.json."  # 同上
 
-# 左の列の題(行の名前と窓の題を兼ねる)
 tip "General" = "一般"
 tip "Models" = "モデル"
 tip "Pools" = "プール"
@@ -125,17 +89,14 @@ tip "Runners" = "ランナー"
 tip "Phone & browser" = "スマホとブラウザ"
 tip "Keyboard" = "キーボード"
 
-# 窓と節の共通
 "Settings didn't open: {e}" = "設定が開きませんでした: {e}"
 "Start a thread about this" = "これについてスレッドを始める"
 "Opens a new thread to ask your agent about these settings" = "新しいスレッドを開いて、この設定についてエージェントに聞く"
-# くまのボタン。名前は英語のまま。表示は上の replace: が作る(同じ日本語)。
 tip "Start a thread about {title}" = "「{title}」についてスレッドを始める"
 "Not connected to the runner." = "ランナーにつながっていません。"
 "This runner is too old for settings. It gets them when it next updates." = "このランナーは古く、設定を使えません。次の更新で使えるようになります。"
 "Loading…" = "読み込み中…"
 
-# 一般 › 見た目
 tip "Appearance" = "見た目"
 tip "How Threadbear looks, for Threadbear only. Same as the Mac follows System Settings > Appearance, and the first accent is the Mac's own. Text size is the same as View > Zoom (⌘= and ⌘-). The bear colours are Wayne Sutton's, from his fork." = "Threadbear だけの見た目です。Mac に合わせる時はシステム設定 > 外観 に従い、最初のアクセントは Mac の物です。文字の大きさは View > Zoom(⌘= と ⌘-)と同じです。クマの色は Wayne Sutton さんのフォークから来ています。"
 tip "How Threadbear looks, for Threadbear only. Same as Windows follows Settings > Personalization > Colors. Text size is the same as View > Zoom (Ctrl+= and Ctrl+-). The bear colours are Wayne Sutton's, from his fork." = "Threadbear だけの見た目です。Windows に合わせる時は 設定 > 個人用設定 > 色 に従います。文字の大きさは View > Zoom(Ctrl+= と Ctrl+-)と同じです。クマの色は Wayne Sutton さんのフォークから来ています。"
@@ -145,7 +106,6 @@ tip "Always dark, whatever the system is set to" = "システムの設定にか�
 "Accent" = "アクセント"
 "Use the Mac's accent colour" = "Mac のアクセントカラーを使う"
 "Use blue, the usual accent" = "いつものアクセントの青を使う"
-# 名前は英語のまま。表示は上の replace: が作る(同じ日本語)。
 tip "Use {} as the accent" = "{}をアクセントにする"
 "Spacing" = "間隔"
 tip "Roomy" = "ゆったり"
@@ -161,7 +121,6 @@ tip "Larger" = "大きく"
 tip "Text and everything else a step larger (110%)" = "文字もほかも一段大きく(110%)"
 "Font" = "フォント"
 
-# 一般 › パネル・終了
 tip "Panels" = "パネル"
 tip "To move a panel, drag its title or tab. With this on, pressing and holding anywhere on a panel picks it up too. A panel with its title hidden can always be moved that way, as it has nothing else to drag it by." = "パネルを動かすには、題かタブをドラッグします。これを入れると、パネルのどこを長押ししても持ち上がります。題を隠したパネルは、ほかにつかむ所が無いので、いつでもこの方法で動かせます。"
 tip "Press and hold anywhere on a panel to move it, not just on its title or tab" = "題やタブだけでなく、パネルのどこを長押ししても動かせるようにする"
@@ -171,7 +130,6 @@ tip "Quit Threadbear (⌘Q or the Threadbear menu) asks first, so a stray ⌘Q d
 tip "Ask to confirm when you quit Threadbear" = "Threadbear を終える時に確かめる"
 "Ask before quitting" = "終える前に聞く"
 
-# 一般 › 通知
 tip "Notifications" = "通知"
 tip "A soft ding when a thread finishes working: its reply is done, it's waiting for your answer, or it hit an error. It plays wherever you are, even in another app, and stays quiet for a thread you stopped yourself. Notifications themselves are in System Settings > Notifications." = "スレッドが働き終えた時(返事ができた、あなたの答えを待っている、エラーになった)に小さく鳴ります。ほかのアプリにいても鳴り、自分で止めたスレッドでは鳴りません。通知そのものは システム設定 > 通知 にあります。"
 tip "A soft ding when a thread is done and ready for you" = "スレッドが終わってあなたの番になった時に、小さく鳴らす"
@@ -183,7 +141,6 @@ tip "A soft ding when a thread is done and ready for you" = "スレッドが終�
 "Play" = "鳴らす"
 tip "Hear the ding" = "音を聞く"
 
-# 一般 › 新しいスレッド・指示
 tip "New threads" = "新しいスレッド"
 tip "Where a new thread starts when you don't pick a folder." = "フォルダを選ばない時に、新しいスレッドが始まる場所です。"
 "Default folder" = "既定のフォルダ"
@@ -204,7 +161,6 @@ tip "Delete these, so agents are given no standing instructions" = "これを消
 "Give every agent exactly the text shown here" = "ここに出ている文をそのまま、どのエージェントにも渡す"
 "Something other than Settings changed these, so agents aren't being given them." = "設定の外で書き換えられたので、エージェントには渡していません。"
 
-# 一般 › コードレビュー・操作の記録・スリープ・使用量
 tip "Code review" = "コードレビュー"
 tip "When a thread changes code and is done, another lab tries to break the change in a review thread of its own. Your thread waits for what it finds, fixes what holds up, and tells you in its reply.\n\nA change gets one reviewer: the first in Every change that isn't the thread's own provider and has a login with room, so when one runs out the next takes over. Drag them to change the order. A big or risky change gets everyone in Big or risky changes at once, or one reviewer from Every change if fewer than two of them can review. With no other lab to hand, a fresh session of the thread's own provider reviews." = "スレッドがコードを変えて終わると、別の会社の AI が、自分のレビュー用のスレッドでその変更を崩そうとします。あなたのスレッドは見つかった物を待ち、当たっている物を直して、返事で知らせます。\n\n1 つの変更のレビュー役は 1 つです。「Every change」の中で、そのスレッドと別の提供元で、余裕のあるログインを持つ最初の物が受け持つので、1 つが上限に達すると次が引き継ぎます。順はドラッグで変えられます。大きい変更や危ない変更には「Big or risky changes」の全員が一度に付き、その中でレビューできる物が 2 つ未満なら「Every change」から 1 つが付きます。ほかの会社の AI がいない時は、そのスレッドと同じ提供元の新しいセッションがレビューします。"
 tip "Have another lab check each code change a thread makes" = "スレッドが変えたコードを、毎回別の会社の AI に確かめてもらう"
@@ -222,7 +178,6 @@ tip "A day before a login's week resets, if at the rate it's going 30% or more o
 tip "Start a thread with ideas a day before a login's week resets with lots of it unused" = "ログインの 1 週間分が大きく余ったままリセットされる前の日に、使い道の案を出すスレッドを始める"
 "Tell me when a week's about to go unused" = "1 週間分が使われずに終わりそうな時に知らせる"
 
-# 一般 › 全部を同期・Mike からの更新・実験中の機能・ランナー・Web ランタイム
 tip "Full sync" = "全部を同期"
 tip "Send tool output and diffs to your Convex deployment" = "ツールの出力と差分を、自分の Convex に送る"
 "Send tool output to Convex" = "ツールの出力を Convex に送る"
@@ -232,17 +187,14 @@ tip "How often a thread starts to bring in Mike's new releases" = "Mike の新�
 "Bring them in" = "取り込み"
 tip "Experiments" = "実験中の機能"
 tip "New features still being tried out. Each starts off; turn one on to try it, and off again whenever you like. Once one has proved itself it becomes a standard part of Threadbear and its switch goes. The ⓘ beside each says what it does." = "まだ試している新しい機能です。どれも切ってあり、試すには入れて、いつでも切れます。役に立つと分かった物は Threadbear の標準になり、スイッチは無くなります。それぞれの横の ⓘ に、何をするかが書いてあります。"
-# switch_owned は String で受けるので、表示も英語のまま(弱い所)。
 tip "Turn {} off" = "{} を切る"
 tip "Try {}" = "{} を試す"
 tip "Runner" = "ランナー"
 tip "The background program that runs your threads. It updates itself." = "スレッドを動かす、裏で動くプログラムです。ひとりでに更新されます。"
 "Version" = "版"
 "Not connected" = "つながっていません"
-# 節の題と行の名前を兼ねる。
 tip "Web runtime" = "Web ランタイム"
 
-# モデル › 小さな仕事・非公開のフォルダ
 tip "Small jobs" = "小さな仕事"
 tip "Titles and the librarian use Haiku on one of this pool's Claude logins, the one with the most room, and count towards its usage. When every login is out of room they wait. None turns them off." = "題と司書は、このプールの Claude のログインのうち一番余裕のある物で Haiku を使い、その使用量に数えます。どのログインも上限に達している時は待ちます。「なし」にすると止まります。"
 tip "Which pool's Claude logins write titles and do the librarian's work" = "題を書き、司書の仕事をする Claude のログインを、どのプールから使うか"

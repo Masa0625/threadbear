@@ -6,11 +6,6 @@ Feature: Language
   Background:
     Given the app is connected to a runner with the demo threads
 
-  # Only the Japanese copy has the Language row (desktop/ja/README.md), and the
-  # Swift app is frozen, so it never gets it (AGENTS.md). The scripted build
-  # starts in English whatever the Mac's language is (desktop/ja/start.rs).
-  # A kit button's screen reader name is the words it draws, so its label is
-  # what's on screen; a control's tooltip stays its English name.
   @settings.general @swift-pending
   Scenario: Picking 日本語 draws Settings in Japanese, and its controls keep their English names
     When I open Settings

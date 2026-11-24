@@ -1,10 +1,5 @@
-# core/src/updates.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
-# 更新のアイコンのツールチップ(icon_tooltip)は、英語と日本語で 1 回ずつ作る。
-# 英語は記録と自動操作の名前(specs は "Updates\n" で押す)、日本語は表示。
-# だから一覧の行とツールチップの行で、同じ文を表に 1 回書けば足りる。
 made: icon_tooltip
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "reason"  # ランナーの JSON の鍵
 skip "commit"  # 同上
 skip "subject"  # 同上
@@ -27,7 +22,6 @@ skip "{} Mike's release of {}"  # スレッドの題になってランナーに�
 skip "Discuss"  # 同上
 skip "Bring in"  # 同上
 
-# 古い app の変更
 "You changed the old app in 1 place that isn't in this one yet. Port it to rebuild it here, or dismiss it." = "古いアプリで 1 か所変えた所が、まだこのアプリにありません。移してここで作り直すか、閉じてください。"
 "You changed the old app in {n} places that aren't in this one yet. Port each to rebuild it here, or dismiss it." = "古いアプリで {n} か所変えた所が、まだこのアプリにありません。それぞれ移してここで作り直すか、閉じてください。"
 "{more} more" = "ほか {more} 件"
@@ -35,11 +29,9 @@ skip "Bring in"  # 同上
 "1 minute" = "1 分"
 "{n} minutes" = "{n} 分"
 
-# 日付(Mike のリリースの日、古い app の変更の日): 「11月6日」
 "%-d %b" = "%-m月%-d日"
 "{day} {}" = "{month}月{day}日{0:.0}"
 
-# アイコンのツールチップ
 "Updates" = "更新"
 "The runner needs updating" = "ランナーの更新が要ります"
 "The runner's update didn't work" = "ランナーの更新がうまくいきませんでした"
@@ -56,7 +48,6 @@ skip "Bring in"  # 同上
 "A runner update" = "ランナーの更新"
 " from Mike" = "(Mike から)"
 
-# スレッドの直しの置き場
 "In your app" = "今のアプリに入っています"
 "Ready" = "準備できました"
 "In this build" = "このビルドに入っています"
@@ -64,7 +55,6 @@ skip "Bring in"  # 同上
 "In the next build" = "次のビルドで"
 "Waiting for the app" = "アプリを待っています"
 
-# 追う物と Mike のリリース
 "This runner isn't following GitHub's main properly: {p}" = "このランナーは GitHub の main を正しく追っていません: {p}"
 "{} isn't following GitHub's main properly: {}" = "{} は GitHub の main を正しく追っていません: {}"
 "1 new change{suffix}" = "新しい変更 1 件{suffix}"
@@ -86,7 +76,6 @@ skip "Bring in"  # 同上
 "{n} {k}" = "{k} {n}"
 ", " = "、"
 
-# アプリの次の版
 "main to settle" = "main が落ち着くの"
 "a quiet minute" = "静かな 1 分"
 "{} quiet minutes" = "静かな {n} 分{0:.0}"
@@ -111,7 +100,6 @@ skip "Bring in"  # 同上
 "Building the app's next version." = "アプリの次の版をビルドしています。"
 "The app's last build failed." = "アプリの前のビルドが失敗しました。"
 
-# ランナーの更新
 " at {c}" = " ({c})"
 "Building the runner from main{at}{what}." = "main{at} からランナーをビルドしています{what}。"
 "The runner from main{at} is built and starting." = "main{at} のランナーができて、立ち上がっています。"
@@ -125,9 +113,6 @@ skip "Bring in"  # 同上
 "{why} Updating it stops nothing; the new one starts next time your Mac restarts." = "{why}更新しても何も止まりません。新しい物は次に Mac を再起動した時に始まります。"
 "{why} The update is in place, and starts next time your Mac restarts." = "{why}更新は置いてあり、次に Mac を再起動した時に始まります。"
 "Updating Threadbear Runner. Nothing stops; the new one starts next time your Mac restarts." = "Threadbear Runner を更新しています。何も止まりません。新しい物は次に Mac を再起動した時に始まります。"
-# launcher_button のツールチップは、activity_panels.rs の push_button から
-# highlights.rs の tipped_as で SharedString に写される(keep の無い helper)。
-# 名前と読み上げを英語に保つため tip にする。表示も英語のまま(弱い所)。
 "Update it" = "更新する"
 tip "Put the new Threadbear Runner in place. Nothing stops; it starts next time your Mac restarts." = "新しい Threadbear Runner を置きます。何も止まりません。次に Mac を再起動した時に始まります。"
 "Try again" = "もう一度"
@@ -137,7 +122,6 @@ tip "Threadbear Runner is updating" = "Threadbear Runner を更新していま�
 "This runner doesn't say how its updates are going." = "このランナーは、更新の進み具合を知らせてきません。"
 "The runner is up to date." = "ランナーは最新です。"
 
-# エージェントの CLI(一覧の行と、アイコンのツールチップの行)
 "{installed}, up to date" = "{installed}、最新"
 ", an update is available" = "、更新があります"
 ", {v} available" = "、{v} があります"

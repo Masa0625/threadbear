@@ -1,17 +1,12 @@
-// Settings › General › Appearance's Language row (features/language.feature),
-// which only the Japanese copy has (desktop/ja/language.rs).
 import { Then, When } from '@cucumber/cucumber';
 import type { ThreadbearWorld } from '../support/world.ts';
 
-/** The row's tooltip: its name for scripts, English whatever the screen's language. */
 const LANGUAGE_TIP = "The language for Threadbear's buttons, menus and messages";
 
 type Screen = 'en' | 'ja';
 
-/** What's picked in the row, and the screen's language now. */
 type Language = { picked: string; screen: Screen };
 
-/** A drawn control's screen reader name and role, from the `labels` command. */
 type Label = { label: string; role: string | null };
 
 function hasKey<K extends string>(value: unknown, key: K): value is Record<K, unknown> {
@@ -22,7 +17,6 @@ function isScreen(value: unknown): value is Screen {
   return value === 'en' || value === 'ja';
 }
 
-/** The Settings window's `language`, from the GPUI app's dump. */
 function languageIn(dump: unknown): Language | undefined {
   if (!hasKey(dump, 'settingsWindow') || !hasKey(dump.settingsWindow, 'language')) return undefined;
   const language = dump.settingsWindow.language;
@@ -48,8 +42,6 @@ function screenNamed(word: string): Screen {
   throw new Error(`a screen is English or Japanese, not ${word}`);
 }
 
-// As tall as `I press … in Settings` makes it, so the row, its menu and the
-// rest of General are on show.
 async function tallSettings(world: ThreadbearWorld): Promise<void> {
   await world.app.do({ cmd: 'resize', settings: true, w: 880, h: 1600 });
 }
@@ -57,7 +49,6 @@ async function tallSettings(world: ThreadbearWorld): Promise<void> {
 When("I pick {string} from Settings' language menu", async function (this: ThreadbearWorld, choice: string) {
   await tallSettings(this);
   await this.app.do({ cmd: 'click', tipPrefix: LANGUAGE_TIP, settings: true });
-  // The menu's lines are named by their words.
   await this.app.do({ cmd: 'click', tip: choice, settings: true });
 });
 

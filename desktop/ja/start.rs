@@ -1,10 +1,3 @@
-// The screen's language, decided as the app starts (desktop/ja/README.md).
-// Called from the start of the copy's `fn main` (desktop/ja/mirror.rs).
-//
-// "system", "en" or "ja": THREADBEAR_LANG first, then `language` in
-// desktop-settings.json (beside `appearance`), then "system", which is
-// Japanese when the first of macOS's preferred languages starts with "ja".
-// The scripted build (the specs) is English unless THREADBEAR_LANG asks.
 use threadbear_client::config::RunnerConfig;
 
 pub(crate) fn start(automation: bool) {
@@ -25,8 +18,6 @@ fn japanese(choice: Option<&str>, automation: bool, system: fn() -> bool) -> boo
     }
 }
 
-/// desktop-settings.json's `"language"`, read as the settings file is
-/// found (settings.rs), and never written here.
 fn saved_choice() -> Option<String> {
     let path = crate::settings::Settings::path_in(&RunnerConfig::from_env().home);
     language_in(&std::fs::read(path).ok()?)

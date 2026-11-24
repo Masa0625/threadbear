@@ -1,10 +1,3 @@
-// The sidebar's rules with the screen in Japanese (desktop/ja/README.md),
-// through the real functions: Japanese is on for this whole test program,
-// which is why it's one of its own. The words a row draws are Japanese; a
-// thread's title, a project's, a sub-agent's report and a runner's words
-// stay as they are even when they read like an entry in the table; and the
-// words that become a tooltip's name (the activity log's, the scripts')
-// stay English, a row button's finding its Japanese by its address.
 use serde_json::json;
 use threadbear_core::chrono::{DateTime, FixedOffset};
 use threadbear_core::inbox::{BackgroundTask, ThreadSummary};
@@ -21,7 +14,6 @@ fn thread(over: serde_json::Value) -> ThreadSummary {
     serde_json::from_value(v).expect("a thread summary")
 }
 
-/// Melbourne in summer, as the sidebar's own tests have it.
 fn at(s: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(s)
         .expect("a time")
@@ -151,7 +143,6 @@ fn the_words_a_row_draws_are_japanese() {
         )
     );
 
-    // A Monday afternoon: the presets read in Japanese, their ids don't.
     let presets = rows::snooze_presets(&at("2026-11-09T14:00:00+11:00"));
     let titles: Vec<&str> = presets.iter().map(|p| p.title).collect();
     assert_eq!(
@@ -188,8 +179,6 @@ fn the_words_a_row_draws_are_japanese() {
     );
 }
 
-/// Code that reads relative_short's "now" to say "just now" reads its
-/// Japanese too (desktop/ja/core/open_anything.txt, projects.txt).
 #[test]
 fn words_that_turn_now_into_just_now_still_do_in_japanese() {
     ja::set_japanese(true);
@@ -221,8 +210,6 @@ fn words_that_turn_now_into_just_now_still_do_in_japanese() {
 fn a_person_s_and_a_runner_s_words_stay_as_they_are() {
     ja::set_japanese(true);
     let now = at("2026-11-09T20:00:00+11:00");
-    // A sub-agent whose report, description and thread title read like
-    // entries in the table.
     let done = subagent(
         json!({ "id": "a", "description": "Running", "status": "completed", "summary": "Done", "startedAt": "2026-11-09T08:58:00Z" }),
     );
@@ -232,7 +219,6 @@ fn a_person_s_and_a_runner_s_words_stay_as_they_are() {
         rows::subagent_header_meta(None, Some("Untitled")),
         "Untitled から"
     );
-    // The thread it waits on, the one it moves to, what it wakes on.
     let waiting = thread(
         json!({ "needs": "nothing", "lastSeq": 5, "lastSeenSeq": 1, "snoozedUntil": "2026-11-10T09:00:00Z", "waitingOn": [{ "threadId": "x", "title": "Waiting for room" }] }),
     );
@@ -252,13 +238,11 @@ fn a_person_s_and_a_runner_s_words_stay_as_they_are() {
     );
     let out = rows::trailing(&topic, &RowLook::PLAIN, RowMode::Hibernating, &now, None);
     assert_eq!(out.text, "Woke up");
-    // Projects named like entries keep their names, on the tile and in its letter.
     let in_projects = thread(
         json!({ "projects": [{ "id": "p1", "title": "Archive" }, { "id": "p2", "title": "Done" }] }),
     );
     assert_eq!(rows::tile_help(&in_projects), "Archive, Done");
     assert_eq!(rows::project_letter("Untitled"), "U");
-    // A runner's note on a move that failed is its tooltip, as it is.
     let failed = thread(json!({ "moving": { "state": "failed", "note": "Failed" } }));
     let out = rows::trailing(&failed, &RowLook::PLAIN, RowMode::Inbox, &now, None);
     assert_eq!(out.text, "移せませんでした");
@@ -269,8 +253,6 @@ fn a_person_s_and_a_runner_s_words_stay_as_they_are() {
 fn the_words_that_name_a_tooltip_stay_english() {
     ja::set_japanese(true);
     let now = at("2026-11-09T20:00:00+11:00");
-    // A row's hover buttons: the tooltip's name (and the screen reader's,
-    // and the button's id) is English, and its words are found by address.
     let plain = thread(json!({}));
     let starred = thread(json!({ "starredAt": "2026-11-09T00:00:00Z" }));
     for (action, t, en, shown) in [
@@ -300,8 +282,6 @@ fn the_words_that_name_a_tooltip_stay_english() {
             "{en} finds its Japanese by its address"
         );
     }
-    // Tooltips handed on as Strings can't be told by address, so they're
-    // English, times and counts inside them too.
     let failed = thread(json!({ "status": "error" }));
     let out = rows::trailing(
         &failed,
@@ -339,8 +319,6 @@ fn the_words_that_name_a_tooltip_stay_english() {
         rows::background_detail(&tasks(&[("agent", "", false), ("shell", "npm test", true)])),
         "1 sub-agent\nnpm test (finished)"
     );
-    // The place line's and the tile's are made twice where they're drawn
-    // (desktop/ja/gpui/sidebar.txt): in English for the name, and in Japanese.
     let started = thread(
         json!({ "asked": "Fix it", "startedBy": { "kind": "thread", "label": "x", "threadTitle": "Nightly" } }),
     );

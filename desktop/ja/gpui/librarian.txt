@@ -1,9 +1,3 @@
-# gpui/src/librarian.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
-# 今は、司書が作業中の行の「いつ始めたか」の所だけ。ほかの文はまだ英語。
-
-# 時の文は core の sidebar.rs の relative_short が作り、日本語の時は「今」。英語の
-# "now" と比べると日本語では当たらず「started 今 ago」になるので、同じ表の行の
-# 今の言語の字と比べる。
 replace: if ago == "now" {
 with: if ago == threadbear_core::ja::TABLE.iter().find(|e| e.0 == "now").map_or("now", threadbear_core::ja::t) {
 "{why} · started {}" = "{why} · {}から"

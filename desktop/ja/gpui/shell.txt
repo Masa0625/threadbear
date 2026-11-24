@@ -1,19 +1,8 @@
-# gpui/src/shell.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
-# パネルの題(タブとウインドウの題)、まだ無いパネルの文、Mac のメニューバー。
-
-# メニューバーの項目の題は、絵(native/menu_icons.m が英語の題で探す)と、
-# 操作の記録の名前(menu_path の「Thread › Archive」)を兼ねる。だから
-# ツールチップと同じ考えで、名前は英語、表示は日本語にする:
-# - メニューは英語で作って(GPUI はその題で Window のメニューを見つける)、
-#   絵を付けてから、各メニューの中の項目の題だけを日本語に書き換える。
-# - 書き換えは並びの番号で当てる。macOS が足した項目で番号がずれた所に、別の
-#   コマンドの名前を付けないよう、今の題が同じ並びの英語の題(ja_named)と同じ
-#   項目だけを書き換え、違う項目とその子のメニューは英語のまま残す
-#   (照らし合わせは desktop/ja/menu.rs)。
-# - 記録の名前(menu_path)は英語で作る。
+# GPUI は Window のメニューを英語の題で見つけるので、メニューは英語で作ってから
+# 題を書き換える。macOS が足した項目で並びの番号がずれるので、今の題が同じ並びの
+# 英語の題(ja_named)と同じ項目だけを書き換える(desktop/ja/menu.rs)。
 replace: cx.set_menus(gpui_menus(&menus));
 with: let ja_named = threadbear_core::ja::english(|| self.menu_model(cx)); cx.set_menus(gpui_menus(&ja_named));
-# 書き換えを絵の後に差すため、宣言の方は字面を変えて、呼ぶ所だけに当てる。
 replace: fn tb_menu_icons();
 with: fn tb_menu_icons( );
 replace: tb_menu_icons();
@@ -22,20 +11,14 @@ replace: fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
 with: #[cfg(target_os = "macos")] fn ja_retitle_menus(en: &[TopMenu], ja: &[TopMenu]) { use crate::ja_menu::Place; struct Native(objc2::rc::Retained<objc2_app_kit::NSMenu>); impl crate::ja_menu::Menu for Native { fn item(&self, at: usize) -> Option<(String, Option<Native>)> { let item = self.0.itemAtIndex(isize::try_from(at).ok()?)?; Some((item.title().to_string(), item.submenu().map(Native))) } fn set_title(&self, at: usize, title: &str) { if let Some(item) = isize::try_from(at).ok().and_then(|at| self.0.itemAtIndex(at)) { item.setTitle(&objc2_foundation::NSString::from_str(title)) } } } fn places<'a>(en: &'a [MenuEntry], ja: &'a [MenuEntry]) -> Vec<Place<'a>> { en.iter().zip(ja).map(|pair| match pair { (MenuEntry::Item { title: en, .. }, MenuEntry::Item { title: ja, .. }) => Place::Titled { en: en.as_str(), ja: ja.as_str(), items: Vec::new() }, (MenuEntry::Submenu { title: en, items: en_items }, MenuEntry::Submenu { title: ja, items: ja_items }) => Place::Titled { en: en.as_str(), ja: ja.as_str(), items: places(en_items, ja_items) }, _ => Place::Kept }).collect() } let Some(bar) = objc2::MainThreadMarker::new().and_then(|mtm| objc2_app_kit::NSApplication::sharedApplication(mtm).mainMenu()) else { return }; let tops: Vec<Place> = en.iter().zip(ja).map(|(en, ja)| Place::Titled { en: en.title.as_str(), ja: ja.title.as_str(), items: places(&en.items, &ja.items) }).collect(); crate::ja_menu::retitle(&Native(bar), &tops) } fn ja_core_word(en: &'static str) -> &'static str { threadbear_core::ja::TABLE.iter().find(|e| e.0 == en).map_or(en, threadbear_core::ja::t) } fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
 replace: pub(crate) fn menu_path(&self, command: Command, cx: &App) -> Option<String> {
 with: pub(crate) fn menu_path(&self, command: Command, cx: &App) -> Option<String> { threadbear_core::ja::english(|| self.ja_menu_path(command, cx)) } fn ja_menu_path(&self, command: Command, cx: &App) -> Option<String> {
-# 休止のメニューの 2 つは core の定数(英語のまま)。core の表(sidebar.txt)の行を
-# 英語の字面で引く。
 replace: threadbear_core::sidebar::SNOOZE_UNTIL_RESTART,
 with: ja_core_word(threadbear_core::sidebar::SNOOZE_UNTIL_RESTART),
 replace: threadbear_core::sidebar::WAKE_MENU_TITLE,
 with: ja_core_word(threadbear_core::sidebar::WAKE_MENU_TITLE),
 
-# 戻ると進むの行き先は、header.rs の Back と Forward のツールチップ(名前を兼ねる)
-# に入り、その文(core の navigation.rs の history_tip)は英語。名前を英語に保ち、
-# 文も混ぜないため、行き先は英語で作る(スワイプのカードの題も英語のまま)。
 replace: pub(crate) fn destination(&self, back: bool) -> Option<String> {
 with: pub(crate) fn destination(&self, back: bool) -> Option<String> { threadbear_core::ja::english(|| self.ja_destination(back)) } fn ja_destination(&self, back: bool) -> Option<String> {
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "inbox"  # 一覧の名前(記録と保存の鍵)
 skip "scheduled"  # 同上
 skip "projects"  # 同上
@@ -61,7 +44,7 @@ skip "tomorrow"  # 同上
 skip "monday"  # 同上
 # メニューバーの上の段の題は英語のまま。Edit・View・Window・Help は AppKit と
 # GPUI が題で見つけて項目を足す(音声入力、フルスクリーン、ウインドウの一覧、
-# ヘルプの検索)。ほかもそろえる。
+# ヘルプの検索)。
 skip "Threadbear"  # アプリの名前(メニューバーの最初の題)
 skip "File"  # メニューバーの上の段
 skip "Edit"  # 同上
@@ -71,7 +54,6 @@ skip "Thread"  # 同上
 skip "Window"  # 同上
 skip "Help"  # 同上
 
-# パネルの題(タブ、ウインドウの題、Window メニューの一覧)
 "Threads" = "スレッド"
 "Usage" = "使用量"
 "Updates" = "更新"
@@ -90,11 +72,9 @@ skip "Help"  # 同上
 "Untitled" = "無題"
 "New thread" = "新しいスレッド"
 
-# まだ無いパネル
 "{name} isn't in this app yet." = "{name}はまだこのアプリにありません。"
 "Pick a thread to see its {name}." = "スレッドを選ぶと{name}が見られます。"
 
-# メニューバーの項目
 "Restart to Update to {}" = "再起動して {} に更新"
 "About Threadbear" = "Threadbear について"
 "Settings…" = "設定…"

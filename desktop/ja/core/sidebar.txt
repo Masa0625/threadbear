@@ -1,44 +1,18 @@
-# core/src/sidebar.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
-# 行の右に出る文(作業中・失敗・時刻)、休止と移動の文、サブエージェントの行、
-# アーカイブと休止の前に確かめる問い、休止のメニュー。
-#
-# ツールチップ: gpui/src/sidebar.rs が、ここで作った文をツールチップにする。
-# - 行の上のボタン(RowAction::tip)は &'static str のまま tipped! に届き、
-#   読み上げの名前(aria_label)と要素の id にもなるので tip にする。名前は英語、
-#   表示は表の置き場から日本語になる(desktop/ja/tip.rs の of_shared)。
-# - 場所の行(place_tip・byline)とタイル(tile_help)のツールチップは、gpui の
-#   sidebar.txt が式を二度作る(英語の回が名前、日本語の回が表示)ので、普通の行。
-# - 行の右の文のツールチップ(Trailing の tip)は、構造体の String に入って、動きの
-#   ために覚えられてから描かれるので、二度作れない。日本語にすると名前も日本語に
-#   なるので tip にし、表示も英語のまま(updates.txt の launcher_button と同じ弱い所)。
-#   中で呼ぶ時刻や数の文も英語にする(下の english の replace)。仮想ランナーの
-#   マシンの行(box_trailing)も同じ。
-
-# 定数の中の文(曜日・月・休止のメニュー)は、写しでも英語のまま残る(const は
-# 差し替えない)。行は TABLE に入るので、使う所が英語の字面で引く(ja_word と、
-# shell.txt の ja_core_word)。
 replace: fn weekday_name<Tz: TimeZone>(d: &DateTime<Tz>) -> &'static str {
 with: fn ja_word(en: &'static str) -> &'static str { crate::ja::TABLE.iter().find(|e| e.0 == en).map_or(en, crate::ja::t) } fn weekday_name<Tz: TimeZone>(d: &DateTime<Tz>) -> &'static str {
 replace: WEEKDAYS[d.weekday().num_days_from_monday() as usize]
 with: ja_word(WEEKDAYS[d.weekday().num_days_from_monday() as usize])
-# 「12 Oct」は「10月12日」に。「{} {}」は曜日と時刻の並び(until_words)にもあるので、
-# 表の行にせず、この行だけ並びを変える。
 replace: let day_month = format!("{} {}", date.day(), MONTHS[date.month0() as usize]);
 with: let day_month = ja_format!("{1}{0}日", "{} {}", date.day(), ja_word(MONTHS[date.month0() as usize]));
 replace: MONTHS[date.month0() as usize],
 with: ja_word(MONTHS[date.month0() as usize]),
-# 「tomorrow」は休止の選びの id でもあるので tip(書いた所では英語)。「明日 午前5:00」
-# の日は、ここで日本語にする。
 replace: (Some(day), clock_text) => format!("{day} {clock_text}"),
 with: (Some(day), clock_text) => format!("{} {clock_text}", ja_word(day)),
-# 裏の仕事の一覧はツールチップだけに出るので、中の数の文も英語にする。
 replace: pub fn background_detail(tasks: &[BackgroundTask]) -> String {
 with: pub fn background_detail(tasks: &[BackgroundTask]) -> String { crate::ja::english(|| ja_background_detail(tasks)) } fn ja_background_detail(tasks: &[BackgroundTask]) -> String {
-# 休止の行のツールチップの「遅くとも … には」の時刻も英語にする。
 replace all: tip += &format!(", or {} at the latest", until_words(time, now));
 with: tip += &crate::ja::english(|| format!(", or {} at the latest", until_words(time, now)));
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "hibernating"  # 一覧の節の鍵(match の型)
 skip "running"  # サブエージェントの状態の値(match の型)
 skip "star"  # 記号の名前
@@ -58,7 +32,6 @@ skip "evening"  # 同上
 skip "monday"  # 同上
 skip "idle"  # ランナーに合わせるスレッドの状態の値
 
-# 行の上のボタン(ツールチップ、読み上げの名前、要素の id)
 tip "Remove star" = "スターを外す"
 tip "Star: keep at the top" = "スター: 一番上に置いておく"
 tip "Hibernate" = "休止する"
@@ -67,7 +40,6 @@ tip "Wake" = "起こす"
 tip "Unarchive" = "アーカイブから戻す"
 tip "Delete chat…" = "チャットを削除…"
 
-# 作業中の時間(「4 分」)と、前の動きからの時間(「今」「5 分」「月曜」「10月12日」)
 "{seconds}s" = "{seconds} 秒"
 "{minutes}m" = "{minutes} 分"
 "{hours}h" = "{hours} 時間"
@@ -96,7 +68,6 @@ tip "Delete chat…" = "チャットを削除…"
 "Nov" = "11月"
 "Dec" = "12月"
 
-# 時刻(「午後3:05」)と、上限で待つ行
 "{twelve}:{:02} {}" = "{1}{twelve}:{0:02}"
 "am" = "午前"
 "pm" = "午後"
@@ -105,10 +76,8 @@ tip "Delete chat…" = "チャットを削除…"
 "at {time}" = "{time}に"
 tip "tomorrow" = "明日"
 "yesterday" = "昨日"
-# 終わりのカードの予約: 「11月13日 金曜 午前9:30: …」
 "{} {} {}, {}: {}" = "{2}{1}日 {0} {3}: {4}"
 
-# 裏の仕事
 "Finishing" = "仕上げ中"
 "sub-agent" = "サブエージェント"
 "job" = "ジョブ"
@@ -118,7 +87,6 @@ tip "tomorrow" = "明日"
 "{n} {word}s" = "{word} {n} 件"
 tip "{name} (finished)" = "{name}(終了)"
 
-# 休止の行(右の文は画面に、tip の行はツールチップに)
 "\"{}\" and {} more" = "\"{}\" ほか {} 件"
 "Waiting on {names}" = "{names} を待っています"
 "Thinking…" = "考え中…"
@@ -147,7 +115,6 @@ tip "{hours} hours" = "{hours} 時間"
 tip "a day" = "1 日"
 tip "{days} days" = "{days} 日"
 
-# 行の右の文
 "Couldn't move" = "移せませんでした"
 "Move cancelled" = "移すのをやめました"
 "Moving to {name}" = "{name} に移しています"
@@ -165,7 +132,6 @@ tip "The last turn failed" = "前のターンが失敗しました"
 "Stopped" = "停止"
 tip "Stopped when the runner restarted" = "ランナーの再起動で止まりました"
 
-# タイルと場所の行のツールチップ、誰が始めたか
 "Untitled project" = "無題のプロジェクト"
 "You: {asked}" = "あなた: {asked}"
 "Schedule" = "予定"
@@ -175,7 +141,6 @@ tip "Stopped when the runner restarted" = "ランナーの再起動で止まり�
 "Started by the librarian, from: {f}" = "司書が始めました。元: {f}"
 "Started by {}" = "{} が始めました"
 
-# アーカイブと休止の前に確かめる問い。日本語は {verb} を使わず {doing} で言う。
 "Archiving" = "アーカイブ"
 "Hibernating" = "休止"
 "{verb} and stop the background work?" = "{doing}して、裏の作業を止めますか?"
@@ -185,7 +150,6 @@ tip "Stopped when the runner restarted" = "ランナーの再起動で止まり�
 "{verb} and stop the turn?" = "{doing}して、ターンを止めますか?"
 "This thread {state}. {doing} it now stops its turn." = "このスレッドは{state}。今{doing}するとターンが止まります。"
 
-# 休止のメニュー(定数の 4 つは、使う所が ja_word で引く)
 "1 hour" = "1 時間"
 "This evening, 6 pm" = "今晩 午後6時"
 "Tomorrow, 9 am" = "明日 午前9時"
@@ -195,7 +159,6 @@ tip "Stopped when the runner restarted" = "ランナーの再起動で止まり�
 "Until the runner restarts" = "ランナーの再起動まで"
 "Pick a time…" = "時刻を選ぶ…"
 
-# サブエージェントの行と見出し
 "Sub-agent" = "サブエージェント"
 "{t} sub-agent" = "{t} サブエージェント"
 "Starting" = "開始中"
@@ -208,7 +171,6 @@ tip "Stopped when the runner restarted" = "ランナーの再起動で止まり�
 "Running in the background" = "裏で実行中"
 "Running" = "実行中"
 
-# 仮想ランナーのマシン(右の文は画面に、tip の行はツールチップに)
 tip "its Claude login" = "その Claude のログイン"
 tip "Claude refused the cloud token for {login}. Open the thread to make a new one; the message goes once it's set." = "Claude が {login} のクラウドトークンを断りました。スレッドを開いて新しく作ってください。できるとメッセージが送られます。"
 tip "{login} has no cloud token yet. Open the thread to make one; the message goes once it's set." = "{login} にはまだクラウドトークンがありません。スレッドを開いて作ってください。できるとメッセージが送られます。"

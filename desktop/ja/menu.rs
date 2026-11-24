@@ -1,38 +1,24 @@
-// The Mac menu bar's titles on a Japanese screen (desktop/ja/gpui/shell.txt).
-//
-// The menus are made in English, as GPUI finds the Window menu and
-// native/menu_icons.m each item's icon by its English title, and then each
-// item is given its Japanese title by its place in its menu. macOS adds
-// items of its own to some menus (Start Dictation and Emoji & Symbols in
-// Edit, Enter Full Screen in View, the windows in Window), and one it puts
-// among ours moves the rest down, so the place an item was made at can hold
-// another command's. An item takes its Japanese only while its title is
-// still the English made for its place; one that isn't, and its submenu,
-// are left as they are.
+// GPUI finds the Window menu by its English title, so the menus are made
+// in English and retitled by place afterwards. macOS adds items of its own
+// to some menus (Start Dictation and Emoji & Symbols in Edit, Enter Full
+// Screen in View, the windows in Window), and one it puts among ours moves
+// the rest down, so an item is retitled only while its title is still the
+// English made for its place.
 
-/// One place in a menu, as it was made.
 pub(crate) enum Place<'a> {
-    /// An item or a submenu: its title in English, as it was made, and in
-    /// Japanese, and a submenu's own places.
     Titled {
         en: &'a str,
         ja: &'a str,
         items: Vec<Place<'a>>,
     },
-    /// A place whose title isn't changed here (a separator, an Edit item,
-    /// Services): it only takes up its place.
     Kept,
 }
 
-/// A menu as macOS holds it now.
 pub(crate) trait Menu: Sized {
-    /// The item at `at`: its title now, and its submenu if it has one.
     fn item(&self, at: usize) -> Option<(String, Option<Self>)>;
     fn set_title(&self, at: usize, title: &str);
 }
 
-/// Gives each item its Japanese title while its title is still the English
-/// made for its place, and the same inside its submenu.
 pub(crate) fn retitle<M: Menu>(menu: &M, places: &[Place<'_>]) {
     for (at, place) in places.iter().enumerate() {
         let Place::Titled { en, ja, items } = place else {
@@ -59,8 +45,6 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    /// A menu's items, each a title and maybe a submenu, shared as an
-    /// NSMenu is, so a submenu read out and retitled is the menu's own.
     #[derive(Clone)]
     struct Fake(Rc<RefCell<Vec<(String, Option<Fake>)>>>);
 
@@ -100,7 +84,6 @@ mod tests {
         Place::Titled { en, ja: en, items }
     }
 
-    /// Thread: Archive, Hibernate ▸ (1 Hour, Pick a Time…), a line, Stop.
     fn thread_places() -> Vec<Place<'static>> {
         vec![
             item("Archive", "アーカイブ"),
@@ -137,7 +120,6 @@ mod tests {
 
     #[test]
     fn an_item_macos_puts_among_ours_moves_no_title_onto_another_command() {
-        // macOS put one of its own second: Hibernate and the rest moved down.
         let sub = hibernate();
         let thread = Fake::of(vec![
             ("Archive", None),
@@ -191,7 +173,6 @@ mod tests {
     fn a_menu_bar_whose_menu_moved_keeps_that_menu_english() {
         let file = Fake::of(vec![("New Thread", None)]);
         let thread = Fake::of(vec![("Archive", None)]);
-        // A menu of someone else's ahead of File: neither top title matches.
         let bar = Fake::of(vec![
             ("Threadbear", None),
             ("Extra", None),

@@ -1,14 +1,6 @@
-# gpui/src/header.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
-# 左はソースの literal の中身をそのまま(エスケープも)。右に {名前} や {} を同じに書く。
-# ツールチップの文も、ほかの文と同じに書く。名前(記録と自動操作)は、写しが
-# ツールチップを英語でもう一度作って保つ(desktop/ja/tip.rs)。tip の行は、id や
-# 読み上げの名前を兼ねる文で、書いた所では英語のまま、描く所で日本語にする。
-
-# ツールチップを作る所: tipped! の 2 つ目の引数と、Tip の .tip(…)。
 tip-macro: tipped! 2
 tip-method: tip
 
-# tipped! を、名前を英語、表示を日本語で作る形にする(desktop/ja/tip.rs の faces)。
 replace: let tip_text: SharedString = $tip.into();
 with: let ja_faces = crate::ja_tip::faces(|| ::std::clone::Clone::clone(&($tip))); let tip_text: SharedString = ja_faces.name.clone();
 replace: let shown = tip_text.clone();
@@ -16,15 +8,12 @@ with: let shown = ja_faces;
 replace: crate::tips::Tip::tip(
 with: crate::tips::Tip::ja_tip(
 
-# 共有の選び(id と読み上げの名前を兼ねる label)を、描く所で日本語にする。
 replace: .child(label)
 with: .child(crate::ja_tip::shown_str(label))
 
-# 上限の文の終わりの句点。
 replace: text.push('.');
 with: text.push(if threadbear_core::ja::on() { '。' } else { '.' });
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "header"  # 題が切り替わる動きの置き場の名前
 skip "pin"  # メニューの記号の名前
 skip "number"  # 同上
@@ -35,7 +24,6 @@ skip "link"  # 同上
 skip "claude"  # エージェントの id
 skip "the title box"  # 別のファイル(unsent.rs)の文に入るかけら。その文に表ができたら訳す
 
-# 題と見出しの並び
 "Untitled" = "無題"
 "Click to rename" = "クリックで名前を変える"
 "·  Archived" = "·  アーカイブ済み"
@@ -45,7 +33,6 @@ skip "the title box"  # 別のファイル(unsent.rs)の文に入るかけら。
 "Works on its own branch in a worktree." = "worktree の自分のブランチで作業します。"
 "Scheduled" = "予定"
 
-# プロジェクトのチップとメニュー
 "In {}" = "{} の中"
 "The librarian put this thread in {title}. Right-click to keep it there or take it out. In {}" = "司書がこのスレッドを {title} に入れました。右クリックで、そこに残すか外せます。{} の中"
 "{title}, in {}. Click to open the project" = "{title}、{} の中。クリックでプロジェクトを開く"
@@ -56,7 +43,6 @@ skip "the title box"  # 別のファイル(unsent.rs)の文に入るかけら。
 "Return saves, Escape cancels" = "Return で保存、Escape で取り消し"
 "Thread title" = "スレッドの題"
 
-# 共有
 "Shared: anyone with the link can read it" = "共有中: リンクを知っている人は誰でも読めます"
 "Share this thread on the web" = "このスレッドを Web で共有する"
 tip "Only you" = "自分だけ"
@@ -69,7 +55,6 @@ tip "Anyone with the link" = "リンクを知っている人"
 "Copy link" = "リンクをコピー"
 "Share this thread" = "このスレッドを共有"
 
-# その他のメニュー
 "More" = "その他"
 "Copy transcript as Markdown" = "会話を Markdown でコピー"
 "Copy thread id" = "スレッドの id をコピー"
@@ -77,7 +62,6 @@ tip "Anyone with the link" = "リンクを知っている人"
 "Sub-agent" = "サブエージェント"
 "Back to the thread" = "スレッドに戻る"
 
-# お知らせの帯
 "Hide this until it happens again" = "また起きるまで隠す"
 "Dismiss" = "閉じる"
 "Start runner" = "ランナーを始める"
@@ -88,7 +72,6 @@ tip "Anyone with the link" = "リンクを知っている人"
 "Start a thread in Threadbear's own repo to find what caused this and fix it" = "Threadbear の repo でスレッドを始めて、原因を探して直す"
 "Investigate" = "調べる"
 
-# 上限
 "Every login in {} is out of room." = "{} のログインは、どれも上限に達しました。"
 "{name}'s plan has ended" = "{name} のプランが終わりました"
 "{name} has reached its limit" = "{name} は上限に達しました"
@@ -101,7 +84,6 @@ tip "Anyone with the link" = "リンクを知っている人"
 "The runner didn't say what thread it made." = "ランナーが、作ったスレッドを知らせてきませんでした。"
 "This Mac's runner is too old for Find work for it. It updates by itself." = "この Mac のランナーは古く、「仕事を探す」を使えません。ランナーはひとりでに更新されます。"
 
-# サインイン
 "{login} is signed out." = "{login} はサインアウトしています。"
 "{login} was refused: signed out, or its sign-in ended. Sign in… opens its own sign-in" = "{login} が断られました。サインアウトしたか、サインインが切れています。「サインイン…」で、そのログインのサインインを開きます"
 "Sign in on {runner} itself" = "{runner} の上でサインインする"
@@ -117,14 +99,12 @@ tip "Anyone with the link" = "リンクを知っている人"
 "Threadbear can't make a token for {id} from here: run claude setup-token for it in Terminal." = "Threadbear はここから {id} のトークンを作れません。ターミナルで claude setup-token を流してください。"
 "Couldn't open Terminal to make a token: {e}" = "トークンを作るためにターミナルを開けませんでした: {e}"
 
-# 続けられなかった時
 "Move this thread to {title} on GPT-6.1-Sol and continue the task. Your draft stays in the box." = "このスレッドを {title} の GPT-6.1-Sol に移して、作業を続けます。書きかけの文は箱に残ります。"
 "Claude couldn't continue with this message." = "Claude はこのメッセージで続けられませんでした。"
 "Continuing…" = "続けています…"
 "Continue with Codex Sol" = "Codex Sol で続ける"
 "Codex Sol is no longer available. Choose a model to carry on." = "Codex Sol はもう使えません。続けるモデルを選んでください。"
 
-# 送れなかった時
 "Couldn't reach the runner." = "ランナーにつながりませんでした。"
 "Lost the connection to the runner." = "ランナーとのつながりが切れました。"
 "The runner didn't answer in time." = "ランナーが時間内に答えませんでした。"
@@ -132,7 +112,6 @@ tip "Anyone with the link" = "リンクを知っている人"
 "{what} Your message to {name} hasn't shown up there, so it's back in its box. It may still arrive: look before sending it again." = "{what}{name} へのメッセージがスレッドに出ていないので、箱に戻しました。まだ届くかもしれないので、送り直す前に確かめてください。"
 "{what} Your message to {name} wasn't sent. It's back in its box." = "{what}{name} へのメッセージは送られませんでした。箱に戻しました。"
 
-# アーカイブと受信箱の終わり
 "Open this thread" = "このスレッドを開く"
 "Archived" = "アーカイブ済み"
 "Put it back in the inbox" = "受信箱に戻す"

@@ -1,16 +1,3 @@
-# gpui/src/highlights.rs の画面の文(書き方は desktop/ja/README.md)。
-# ハイライトのパネル(横のパネルの一覧・見出し・行のメニュー)。
-# tip-method は付けない: PaneRow が自分の tip を持つ(README)。
-#
-# tipped・tipped_as は keep の無い helper のまま残す。受ける型に + AsRef<str> を
-# 足すと、activity_panels.rs の icon_button など、impl Into<SharedString> を受けて
-# 渡す別のファイルの helper がコンパイルできなくなる。だから tipped に渡る文は
-# tip にする(名前も表示も英語)。
-
-# PaneRow のツールチップは、このファイルの中でしか付けない。名前と表示の 2 つの
-# 顔(desktop/ja/tip.rs の Faces)で持つ。表の literal は置き場から、二度作った文
-# (faces・both)はその 2 つから、名前は英語・表示は日本語になる。ほかの format! の
-# 文は一度しか作らないので tip にする。
 replace: pub tip: Option<String>,
 with: pub tip: Option<crate::ja_tip::Faces>,
 replace: pub(crate) fn tip(mut self, tip: impl Into<String>) -> Self {
@@ -19,23 +6,16 @@ replace: self.tip = Some(tip.into());
 with: self.tip = Some(crate::ja_tip::IntoFaces::into_faces(tip));
 replace: wrapper = wrapper.tip(tip);
 with: wrapper = wrapper.ja_tip(tip);
-# サブエージェントの行: 状態の文(core の subagent_status_text)ごと二度作る。
 replace: .tip(threadbear_core::ja_format!("{}。クリックで会話を読む。",
 with: .tip(crate::ja_tip::faces(|| threadbear_core::ja_format!("{}。クリックで会話を読む。",
 replace: side::subagent_status_text(s)
 with: side::subagent_status_text(s))
 
-# 見出し(Heading.title)とパネルの名前(section_title)は String で、畳む所の
-# ツールチップ("Show {title}")と Back to のツールチップ(どちらも tipped の名前)に
-# 入る。だから表では tip にして英語で作り、描く所だけ日本語にする。日本語を引くのは、
-# 決まった見出し(fold の定数)と決まったパネル(HIGHLIGHTS など)の時だけ。その題は
-# コードの文なので、字面で引いても利用者の文(プロジェクトの名前)は訳さない。
 replace: .child(h.title.clone());
 with: .child(if threadbear_core::ja::on() && [fold::NEEDS_YOU, fold::SCHEDULED, fold::SUBAGENTS, fold::STARTED_THREADS, fold::PINNED, fold::FILES, fold::LINKS, fold::CHANGES].contains(&h.key.as_str()) { crate::ja_table::TABLE.iter().find(|(en, _)| *en == h.title).map_or_else(|| h.title.clone(), |(_, ja)| (*ja).to_owned()) } else { h.title.clone() });
 replace: .child(self.section_title(thread, section)),
 with: .child({ let shown = self.section_title(thread, section); match crate::ja_table::TABLE.iter().find(|(en, _)| threadbear_core::ja::on() && [HIGHLIGHTS, PATCHES, FILES, BROWSER].contains(&section) && *en == shown) { Some((_, ja)) => (*ja).to_owned(), None => shown } }),
 
-# 画面に出ない文(「表に無い」の一覧から外す)
 skip "merge"  # PR の操作の名前(ランナーに送る)
 skip "folder"  # 記号の名前
 skip "link"  # 同上
@@ -61,7 +41,6 @@ skip "patches"  # 同上
 skip "browser"  # 同上
 skip "panel {id}"  # 同上
 
-# 見出し(上の replace で描く所だけ日本語)
 tip "Needs you" = "あなた待ち"
 tip "Scheduled" = "予定"
 tip "Sub-agents" = "サブエージェント"
@@ -70,27 +49,22 @@ tip "Pinned" = "ピン留め"
 tip "Files" = "ファイル"
 tip "Links" = "リンク"
 tip "Changes" = "変更"
-# 見出しを畳む・開くツールチップ(tipped。名前なので英語)
 tip "Show" = "見る"
 tip "Hide" = "隠す"
 
-# パネルの名前(上の replace で描く所だけ日本語)
 tip "Highlights" = "ハイライト"
 tip "Patches" = "パッチ"
 tip "Browser" = "ブラウザ"
 tip "Back to {back_to}" = "{back_to} に戻る"
 
-# 行のツールチップ
 "Edit the schedule" = "予定を編集する"
 "Open this thread" = "このスレッドを開く"
 "Open in its app" = "そのアプリで開く"
 tip "Open {address}" = "{address} を開く"
 "{}. Click to read its transcript." = "{}。クリックで会話を読む。"
-# やる事の印(tipped。名前なので英語)
 tip "Done" = "済んだ"
 tip "Not done" = "まだ"
 
-# 空の時と行の題
 "This runner doesn't keep highlights yet." = "このランナーは、まだハイライトを持てません。"
 "Nothing here yet. Files, links and commits from this thread show up here as it works." = "まだ何もありません。このスレッドが作業すると、ファイル・リンク・コミットがここに出ます。"
 "Pick a thread to see its Highlights." = "スレッドを選ぶと、そのハイライトが出ます。"
@@ -100,7 +74,6 @@ tip "Not done" = "まだ"
 "Show all {count}" = "{count} 件を全部見る"
 "Couldn't remove {title}: {}" = "{title} を外せませんでした: {}"
 
-# 行のメニュー
 "Copy Image" = "画像をコピー"
 "Preview here" = "ここでプレビュー"
 "Open" = "開く"

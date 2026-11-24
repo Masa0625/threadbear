@@ -1,13 +1,3 @@
-// Settings › General › Appearance's Language row, which only this copy has
-// (desktop/ja/README.md): Same as the Mac, English or 日本語. The table for
-// settings_window.rs puts it under the Font row.
-//
-// The choice is desktop-settings.json's "language", beside "appearance". It
-// goes through the app's own settings, which keep a field they don't know
-// (settings.rs), so saving any other setting later keeps it. Picking one
-// changes every window's words there and then. What's made once as the app
-// starts, the Mac's menu bar, follows at the next launch, when
-// desktop/ja/start.rs reads the same key.
 use crate::a11y::A11yRole as _;
 use crate::app::Threadbear;
 use crate::settings::Saved;
@@ -19,15 +9,11 @@ use gpui_kit::component::Sizable as _;
 use gpui_kit::*;
 use serde_json::Value;
 
-/// desktop-settings.json's key, the one start.rs reads.
 const KEY: &str = "language";
 
-/// The row's tooltip: in English as its name, which the activity log and
-/// the scripts know it by, and the words it shows on a Japanese screen.
 const TIP: &str = "The language for Threadbear's buttons, menus and messages";
 const TIP_JA: &str = "Threadbear のボタン・メニュー・お知らせの言語";
 
-/// What can be picked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Language {
     System,
@@ -38,7 +24,6 @@ enum Language {
 impl Language {
     const ALL: [Language; 3] = [Language::System, Language::English, Language::Japanese];
 
-    /// As desktop-settings.json keeps it.
     fn name(self) -> &'static str {
         match self {
             Language::System => "system",
@@ -47,7 +32,6 @@ impl Language {
         }
     }
 
-    /// Anything else is the system's, as start.rs reads it.
     fn from_name(name: &str) -> Language {
         match name.trim() {
             "en" => Language::English,
@@ -56,9 +40,6 @@ impl Language {
         }
     }
 
-    /// What the menu calls it. English and 日本語 are in their own words on
-    /// either screen, so someone who can't read the other finds theirs. The
-    /// system's is named for the machine, as Appearance's Same as the Mac is.
     fn title(self, japanese: bool) -> &'static str {
         match (self, japanese) {
             (Language::English, _) => "English",
@@ -72,9 +53,6 @@ impl Language {
         }
     }
 
-    /// Whether the screen's words are Japanese with this picked. The
-    /// system's is read as start.rs reads it as the app starts, and the
-    /// scripted build stays English with it.
     fn japanese(self) -> bool {
         match self {
             Language::English => false,
@@ -86,7 +64,6 @@ impl Language {
     }
 }
 
-/// The language picked, from the settings file's fields.
 fn chosen(saved: &Saved) -> Language {
     saved
         .extra
@@ -95,16 +72,12 @@ fn chosen(saved: &Saved) -> Language {
         .map_or(Language::System, Language::from_name)
 }
 
-/// Puts the choice among the settings file's fields, which the app's next
-/// save writes with the rest.
 fn keep(saved: &mut Saved, choice: Language) {
     saved
         .extra
         .insert(KEY.to_owned(), Value::from(choice.name()));
 }
 
-/// Picks `choice`: kept in the settings file, and every window drawn again
-/// in its words.
 fn pick(app: &mut Threadbear, choice: Language, cx: &mut Context<Threadbear>) {
     keep(&mut app.settings.saved, choice);
     app.save_settings_soon(cx);
@@ -113,7 +86,6 @@ fn pick(app: &mut Threadbear, choice: Language, cx: &mut Context<Threadbear>) {
     cx.notify();
 }
 
-/// The row's words, in the screen's language.
 pub(crate) fn label() -> &'static str {
     if threadbear_core::ja::on() {
         "言語"
@@ -122,9 +94,6 @@ pub(crate) fn label() -> &'static str {
     }
 }
 
-/// The row's control, the same shape as Font's: a button saying what's
-/// picked, whose menu ticks it. `tab` is the Settings window's section, whose
-/// title the window shows: a pick changes that too.
 pub(crate) fn control(app: WeakEntity<Threadbear>, tab: &'static str, cx: &App) -> AnyElement {
     let japanese = threadbear_core::ja::on();
     let now = app
@@ -152,8 +121,6 @@ pub(crate) fn control(app: WeakEntity<Threadbear>, tab: &'static str, cx: &App) 
             }
             menu
         });
-    // The tooltip on a holder round the kit's button, as tipped_as does for
-    // one (highlights.rs), with its name and its words apart.
     div()
         .id("settings-language-holder")
         .test_support()
@@ -168,8 +135,6 @@ pub(crate) fn control(app: WeakEntity<Threadbear>, tab: &'static str, cx: &App) 
         .into_any_element()
 }
 
-/// The Settings window's dump of it: what's picked, and the screen's
-/// language now.
 #[cfg(feature = "automation")]
 pub(crate) fn dump(app: &WeakEntity<Threadbear>, cx: &App) -> Value {
     let picked = app
@@ -190,7 +155,6 @@ mod tests {
     use serde_json::Value;
     use std::path::{Path, PathBuf};
 
-    /// A settings file holding `text`, in a folder of the test's own.
     fn file(name: &str, text: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("tb-language-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -236,7 +200,6 @@ mod tests {
         let mut s = Settings::load_from(path.clone());
         keep(&mut s.saved, Language::English);
         s.save_checked().unwrap();
-        // The app as it next starts, then an accent picked and saved.
         let mut s = Settings::load_from(path.clone());
         assert_eq!(chosen(&s.saved), Language::English);
         s.saved.accent = Some("rose".into());
@@ -260,15 +223,11 @@ mod tests {
     }
 }
 
-/// How the table for settings_window.rs hands that window's tooltips on
-/// (desktop/ja/gpui/settings_window.txt): each named in English, as the
-/// activity log and the scripts know it, and shown in Japanese.
 #[cfg(test)]
 mod settings_window_tips {
     use crate::ja_tip::{both, faces, keep, shown_str, Faces};
     use threadbear_core::ja;
 
-    /// A row of gpui's table, by its English.
     fn row(en: &str) -> &'static (&'static str, &'static str) {
         crate::ja_table::TABLE
             .iter()
@@ -297,10 +256,8 @@ mod settings_window_tips {
     fn a_switch_s_tooltip_handed_on_as_a_string_is_named_in_english() {
         let _ja = Japanese::on();
         let (en, ja_words) = *row("Note what you click and open in this app");
-        // `switch` hands switch_owned a String, through ja::made.
         let handed: String = ja::made(en, || shown_str(en).to_owned());
         assert_eq!(handed, en);
-        // switch_owned's `let shown` is made twice, then its `.tip(shown)`.
         let shown = both(|| handed.clone());
         assert_eq!(pair(&faces(|| shown.clone())), (en, ja_words));
     }
@@ -313,7 +270,6 @@ mod settings_window_tips {
         let about: &str = en;
         let ja_about = faces(|| about);
         assert_eq!(pair(&ja_about), (en, ja_words));
-        // The ⓘ's tooltip, which tipped makes from the name.
         assert_eq!(pair(&Faces::of_shared(ja_about.name)), (en, ja_words));
     }
 
