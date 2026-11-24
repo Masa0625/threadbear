@@ -28,6 +28,7 @@ pub fn gpui() {
         tables: dir.join("../ja/gpui"),
         runtime: "threadbear_core::ja",
         format_macro: "threadbear_core::ja_format!",
+        first: None,
         extra: vec![
             path_mod(&dir.join("../ja/start.rs"), "mod ja_start;"),
             path_mod(&out.join("ja/ja_table.rs"), "mod ja_table;"),
@@ -56,14 +57,17 @@ pub fn core() {
         stub: "ja/lib.rs",
         tables: dir.join("../ja/core"),
         runtime: "crate::ja",
-        format_macro: "crate::ja_format!",
-        extra: vec![
-            path_mod(&dir.join("../ja/runtime.rs"), "pub mod ja;"),
-            format!(
-                "#[cfg(test)] {}",
-                path_mod(&dir.join("../ja/mirror.rs"), "mod ja_mirror_tests;")
-            ),
-        ],
+        // 写しの根は include! の中なので、crate の中から `crate::ja_format!` では
+        // 呼べない(rustc の決まり)。先頭の `#[macro_use]` で名前だけで呼ぶ。
+        format_macro: "ja_format!",
+        first: Some(format!(
+            "#[macro_use] {} ",
+            path_mod(&dir.join("../ja/runtime.rs"), "pub mod ja;")
+        )),
+        extra: vec![format!(
+            "#[cfg(test)] {}",
+            path_mod(&dir.join("../ja/mirror.rs"), "mod ja_mirror_tests;")
+        )],
         main_call: None,
         out: out_dir(),
     });
@@ -99,6 +103,8 @@ pub struct Crate {
     /// 差し替えた式が呼ぶ所。
     pub runtime: &'static str,
     pub format_macro: &'static str,
+    /// 写しの根の 1 行目の頭に足す物(行の数を変えない)。
+    pub first: Option<String>,
     /// 写しの根の終わりに足す行。
     pub extra: Vec<String>,
     /// `fn main` の始めに足す式。
@@ -221,7 +227,10 @@ pub fn mirror(c: &Crate) -> Report {
             ));
         }
     }
-    let mut text = text;
+    let mut text = match &c.first {
+        Some(first) => format!("{first}{text}"),
+        None => text,
+    };
     text.push('\n');
     for line in &c.extra {
         text.push_str(line);
@@ -1232,6 +1241,7 @@ mod tests {
             tables: dir.join("tables"),
             runtime: "crate::ja",
             format_macro: "crate::ja_format!",
+            first: None,
             extra: vec![],
             main_call: None,
             out: dir.join("out"),
