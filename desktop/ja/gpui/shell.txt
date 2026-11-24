@@ -1,0 +1,126 @@
+# GPUI は Window のメニューを英語の題で見つけるので、メニューは英語で作ってから
+# 題を書き換える。macOS が足した項目で並びの番号がずれるので、今の題が同じ並びの
+# 英語の題(ja_named)と同じ項目だけを書き換える(desktop/ja/menu.rs)。
+replace: cx.set_menus(gpui_menus(&menus));
+with: let ja_named = threadbear_core::ja::english(|| self.menu_model(cx)); cx.set_menus(gpui_menus(&ja_named));
+replace 2 of 2: tb_menu_icons();
+with: tb_menu_icons(); if threadbear_core::ja::on() { ja_retitle_menus(&ja_named, &menus) }
+replace: fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
+with: #[cfg(target_os = "macos")] fn ja_retitle_menus(en: &[TopMenu], ja: &[TopMenu]) { use crate::ja_menu::Place; struct Native(objc2::rc::Retained<objc2_app_kit::NSMenu>); impl crate::ja_menu::Menu for Native { fn item(&self, at: usize) -> Option<(String, Option<Native>)> { let item = self.0.itemAtIndex(isize::try_from(at).ok()?)?; Some((item.title().to_string(), item.submenu().map(Native))) } fn set_title(&self, at: usize, title: &str) { if let Some(item) = isize::try_from(at).ok().and_then(|at| self.0.itemAtIndex(at)) { item.setTitle(&objc2_foundation::NSString::from_str(title)) } } } fn places<'a>(en: &'a [MenuEntry], ja: &'a [MenuEntry]) -> Vec<Place<'a>> { en.iter().zip(ja).map(|pair| match pair { (MenuEntry::Item { title: en, .. }, MenuEntry::Item { title: ja, .. }) => Place::Titled { en: en.as_str(), ja: ja.as_str(), items: Vec::new() }, (MenuEntry::Submenu { title: en, items: en_items }, MenuEntry::Submenu { title: ja, items: ja_items }) => Place::Titled { en: en.as_str(), ja: ja.as_str(), items: places(en_items, ja_items) }, _ => Place::Kept }).collect() } let Some(bar) = objc2::MainThreadMarker::new().and_then(|mtm| objc2_app_kit::NSApplication::sharedApplication(mtm).mainMenu()) else { return }; let tops: Vec<Place> = en.iter().zip(ja).map(|(en, ja)| Place::Titled { en: en.title.as_str(), ja: ja.title.as_str(), items: places(&en.items, &ja.items) }).collect(); crate::ja_menu::retitle(&Native(bar), &tops) } fn ja_core_word(en: &'static str) -> &'static str { threadbear_core::ja::TABLE.iter().find(|e| e.0 == en).map_or(en, threadbear_core::ja::t) } fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
+replace: pub(crate) fn menu_path(&self, command: Command, cx: &App) -> Option<String> {
+with: pub(crate) fn menu_path(&self, command: Command, cx: &App) -> Option<String> { threadbear_core::ja::english(|| self.ja_menu_path(command, cx)) } fn ja_menu_path(&self, command: Command, cx: &App) -> Option<String> {
+replace: threadbear_core::sidebar::SNOOZE_UNTIL_RESTART,
+with: ja_core_word(threadbear_core::sidebar::SNOOZE_UNTIL_RESTART),
+replace: threadbear_core::sidebar::WAKE_MENU_TITLE,
+with: ja_core_word(threadbear_core::sidebar::WAKE_MENU_TITLE),
+
+replace: pub(crate) fn destination(&self, back: bool) -> Option<String> {
+with: pub(crate) fn destination(&self, back: bool) -> Option<String> { threadbear_core::ja::english(|| self.ja_destination(back)) } fn ja_destination(&self, back: bool) -> Option<String> {
+
+skip "inbox"  # 一覧の名前(記録と保存の鍵)
+skip "scheduled"  # 同上
+skip "projects"  # 同上
+skip "librarian"  # 同上
+skip "recipes"  # 同上
+skip "window"  # パネルの並びの id
+skip "sidebar"  # 同上
+skip "main"  # 同上
+skip "pane"  # 同上
+skip "macos"  # cfg の target_os の値
+skip "powerplug"  # 記号の名前
+skip "checklist"  # 同上
+skip "terminal"  # 同上
+skip "pin"  # 同上
+skip "folder"  # 同上
+skip "globe"  # 同上
+skip "hibernating"  # 一覧の節の鍵
+skip "archived"  # 同上
+skip "running"  # 同上
+skip "hour"  # 休止の選びの id(core の snooze_presets と合わせる)
+skip "evening"  # 同上
+skip "tomorrow"  # 同上
+skip "monday"  # 同上
+# メニューバーの上の段の題は英語のまま。Edit・View・Window・Help は AppKit と
+# GPUI が題で見つけて項目を足す(音声入力、フルスクリーン、ウインドウの一覧、
+# ヘルプの検索)。
+skip "Threadbear"  # アプリの名前(メニューバーの最初の題)
+skip "File"  # メニューバーの上の段
+skip "Edit"  # 同上
+skip "View"  # 同上
+skip "Go"  # 同上
+skip "Thread"  # 同上
+skip "Window"  # 同上
+skip "Help"  # 同上
+
+"Threads" = "スレッド"
+"Usage" = "使用量"
+"Updates" = "更新"
+"Connectors" = "コネクタ"
+"Runners" = "ランナー"
+"Finish setting up" = "セットアップを仕上げる"
+"Terminal" = "ターミナル"
+"Highlights" = "ハイライト"
+"Files" = "ファイル"
+"Browser" = "ブラウザ"
+"Patches" = "パッチ"
+"Projects" = "プロジェクト"
+"Librarian" = "司書"
+"Recipes" = "レシピ"
+"Scheduled" = "予定"
+"Untitled" = "無題"
+"New thread" = "新しいスレッド"
+
+"{name} isn't in this app yet." = "{name}はまだこのアプリにありません。"
+"Pick a thread to see its {name}." = "スレッドを選ぶと{name}が見られます。"
+
+"Restart to Update to {}" = "再起動して {} に更新"
+"About Threadbear" = "Threadbear について"
+"Settings…" = "設定…"
+"Services" = "サービス"
+"Hide Threadbear" = "Threadbear を隠す"
+"Hide Others" = "ほかを隠す"
+"Show All" = "すべてを表示"
+"Quit Threadbear" = "Threadbear を終了"
+"New Thread" = "新しいスレッド"
+"Close" = "閉じる"
+"Zoom In" = "拡大"
+"Zoom Out" = "縮小"
+"Actual Size" = "実際のサイズ"
+"Hide Threads" = "スレッドを隠す"
+"Show Threads" = "スレッドを出す"
+"Collapse Threads" = "スレッドをたたむ"
+"Expand Threads" = "スレッドを広げる"
+"Hide Panels" = "パネルを隠す"
+"Show Panels" = "パネルを出す"
+"Hide Sidebar Panels" = "サイドバーのパネルを隠す"
+"Show Sidebar Panels" = "サイドバーのパネルを出す"
+"Hide Terminal" = "ターミナルを隠す"
+"Show Terminal" = "ターミナルを出す"
+"Reset Panel Layout" = "パネルの並びを元に戻す"
+"Hide Frame Rate" = "フレームレートを隠す"
+"Show Frame Rate" = "フレームレートを出す"
+"Back" = "戻る"
+"Forward" = "進む"
+"Next Inbox Thread" = "受信箱の次のスレッド"
+"Show Previous Tab" = "前のタブを表示"
+"Show Next Tab" = "次のタブを表示"
+"Open Anything…" = "何でも開く…"
+"Unarchive" = "アーカイブから戻す"
+"Archive" = "アーカイブ"
+"Hibernate" = "休止"
+"Pick a time…" = "時刻を選ぶ…"
+"Stop" = "止める"
+"Attach Images or Markdown…" = "画像か Markdown を添付…"
+"Copy Transcript as Markdown" = "会話を Markdown でコピー"
+"Show Inbox" = "受信箱を表示"
+"Show Scheduled" = "予定を表示"
+"Show Projects" = "プロジェクトを表示"
+"Show Librarian" = "司書を表示"
+"Show Hibernating" = "休止中を表示"
+"Show Archived" = "アーカイブ済みを表示"
+"Minimize" = "しまう"
+"Zoom" = "拡大/縮小"
+"Bring All to Front" = "すべてを手前に移動"
+"Set Up Threadbear" = "Threadbear のセットアップ"
+"Take the Tour" = "ツアーを見る"
+"Finish Setting Up" = "セットアップを仕上げる"

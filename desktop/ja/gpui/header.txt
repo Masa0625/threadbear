@@ -1,0 +1,123 @@
+tip-macro: tipped! 2
+tip-method: tip
+
+replace: let tip_text: SharedString = $tip.into();
+with: let ja_faces = crate::ja_tip::faces(|| ::std::clone::Clone::clone(&($tip))); let tip_text: SharedString = ja_faces.name.clone();
+replace: let shown = tip_text.clone();
+with: let shown = ja_faces;
+replace: crate::tips::Tip::tip(
+with: crate::tips::Tip::ja_tip(
+
+replace: .child(label)
+with: .child(crate::ja_tip::shown_str(label))
+
+replace: text.push('.');
+with: text.push(if threadbear_core::ja::on() { '。' } else { '.' });
+
+skip "header"  # 題が切り替わる動きの置き場の名前
+skip "pin"  # メニューの記号の名前
+skip "number"  # 同上
+skip "safari"  # 同上
+skip "checkmark"  # お知らせの帯の記号の名前
+skip "off"  # 共有の値(ランナーに送る)
+skip "link"  # 同上
+skip "claude"  # エージェントの id
+skip "the title box"  # 別のファイル(unsent.rs)の文に入るかけら。その文に表ができたら訳す
+
+"Untitled" = "無題"
+"Click to rename" = "クリックで名前を変える"
+"·  Archived" = "·  アーカイブ済み"
+"This turn started before the runner updated, so it runs on the previous version. The thread moves to the new one when the turn ends." = "このターンはランナーの更新前に始まったので、前の版で動いています。ターンが終わるとスレッドは新しい版に移ります。"
+"·  Finishing on the previous version" = "·  前の版で仕上げ中"
+"Works on its own branch in a worktree. tb land, or the Land chip, puts it on main in {}." = "worktree の自分のブランチで作業します。tb land か Land のチップで、{} の main に入ります。"
+"Works on its own branch in a worktree." = "worktree の自分のブランチで作業します。"
+"Scheduled" = "予定"
+
+"In {}" = "{} の中"
+"The librarian put this thread in {title}. Right-click to keep it there or take it out. In {}" = "司書がこのスレッドを {title} に入れました。右クリックで、そこに残すか外せます。{} の中"
+"{title}, in {}. Click to open the project" = "{title}、{} の中。クリックでプロジェクトを開く"
+"Open {title}" = "{title} を開く"
+"Keep it in {title}" = "{title} に残す"
+"Take it out of {title}" = "{title} から外す"
+"Add to another project" = "別のプロジェクトに足す"
+"Return saves, Escape cancels" = "Return で保存、Escape で取り消し"
+"Thread title" = "スレッドの題"
+
+"Shared: anyone with the link can read it" = "共有中: リンクを知っている人は誰でも読めます"
+"Share this thread on the web" = "このスレッドを Web で共有する"
+tip "Only you" = "自分だけ"
+"Only you can read it" = "自分だけが読めます"
+tip "Anyone with the link" = "リンクを知っている人"
+"Anyone with the link can read it" = "リンクを知っている人は誰でも読めます"
+"Make a new link. The old one stops working." = "新しいリンクを作ります。古いリンクは使えなくなります。"
+"Open the shared page in your browser" = "共有のページをブラウザで開く"
+"Copy the link to paste anywhere" = "リンクをコピーして、どこにでも貼れるようにする"
+"Copy link" = "リンクをコピー"
+"Share this thread" = "このスレッドを共有"
+
+"More" = "その他"
+"Copy transcript as Markdown" = "会話を Markdown でコピー"
+"Copy thread id" = "スレッドの id をコピー"
+"Open on the web" = "Web で開く"
+"Sub-agent" = "サブエージェント"
+"Back to the thread" = "スレッドに戻る"
+
+"Hide this until it happens again" = "また起きるまで隠す"
+"Dismiss" = "閉じる"
+"Start runner" = "ランナーを始める"
+"Start the runner's background service" = "ランナーの裏で動くサービスを始める"
+"Try again" = "もう一度"
+"Try to reach the runner now rather than waiting" = "待たずに、今ランナーにつなぎ直す"
+"Hide this message" = "このお知らせを隠す"
+"Start a thread in Threadbear's own repo to find what caused this and fix it" = "Threadbear の repo でスレッドを始めて、原因を探して直す"
+"Investigate" = "調べる"
+
+"Every login in {} is out of room." = "{} のログインは、どれも上限に達しました。"
+"{name}'s plan has ended" = "{name} のプランが終わりました"
+"{name} has reached its limit" = "{name} は上限に達しました"
+", resets {}" = "。{} にリセット"
+"Continue now on {title}" = "今すぐ {title} で続ける"
+"Reset {name}'s limits" = "{name} の上限をリセットしました"
+"Codex says {name} has nothing to reset yet." = "Codex によると、{name} にはまだリセットする物がありません。"
+"{name} has no resets left." = "{name} にはリセットが残っていません。"
+"This Mac's runner is too old to use a reset. It updates by itself." = "この Mac のランナーは古く、リセットを使えません。ランナーはひとりでに更新されます。"
+"The runner didn't say what thread it made." = "ランナーが、作ったスレッドを知らせてきませんでした。"
+"This Mac's runner is too old for Find work for it. It updates by itself." = "この Mac のランナーは古く、「仕事を探す」を使えません。ランナーはひとりでに更新されます。"
+
+"{login} is signed out." = "{login} はサインアウトしています。"
+"{login} was refused: signed out, or its sign-in ended. Sign in… opens its own sign-in" = "{login} が断られました。サインアウトしたか、サインインが切れています。「サインイン…」で、そのログインのサインインを開きます"
+"Sign in on {runner} itself" = "{runner} の上でサインインする"
+"Sign in on {runner} itself: {command} in its Terminal" = "{runner} の上でサインインする: そのターミナルで {command}"
+"{login} on {runner} is signed out." = "{runner} の {login} はサインアウトしています。"
+"Sign in using that login's CLI, then send your last message again" = "そのログインの CLI でサインインしてから、最後のメッセージをもう一度送る"
+"Opens Terminal on {name}'s own sign-in for this login" = "このログインの {name} のサインインを、ターミナルで開く"
+"Sign in…" = "サインイン…"
+"Send your last message again, once you've signed in" = "サインインしたら、最後のメッセージをもう一度送る"
+"Send again" = "もう一度送る"
+"Threadbear can't sign {id} in from here: run its CLI's sign-in in Terminal." = "Threadbear はここから {id} にサインインできません。ターミナルでその CLI のサインインを流してください。"
+"Couldn't open Terminal to sign in: {e}" = "サインインのためにターミナルを開けませんでした: {e}"
+"Threadbear can't make a token for {id} from here: run claude setup-token for it in Terminal." = "Threadbear はここから {id} のトークンを作れません。ターミナルで claude setup-token を流してください。"
+"Couldn't open Terminal to make a token: {e}" = "トークンを作るためにターミナルを開けませんでした: {e}"
+
+"Move this thread to {title} on GPT-6.1-Sol and continue the task. Your draft stays in the box." = "このスレッドを {title} の GPT-6.1-Sol に移して、作業を続けます。書きかけの文は箱に残ります。"
+"Claude couldn't continue with this message." = "Claude はこのメッセージで続けられませんでした。"
+"Continuing…" = "続けています…"
+"Continue with Codex Sol" = "Codex Sol で続ける"
+"Codex Sol is no longer available. Choose a model to carry on." = "Codex Sol はもう使えません。続けるモデルを選んでください。"
+
+"Couldn't reach the runner." = "ランナーにつながりませんでした。"
+"Lost the connection to the runner." = "ランナーとのつながりが切れました。"
+"The runner didn't answer in time." = "ランナーが時間内に答えませんでした。"
+"this thread" = "このスレッド"
+"{what} Your message to {name} hasn't shown up there, so it's back in its box. It may still arrive: look before sending it again." = "{what}{name} へのメッセージがスレッドに出ていないので、箱に戻しました。まだ届くかもしれないので、送り直す前に確かめてください。"
+"{what} Your message to {name} wasn't sent. It's back in its box." = "{what}{name} へのメッセージは送られませんでした。箱に戻しました。"
+
+"Open this thread" = "このスレッドを開く"
+"Archived" = "アーカイブ済み"
+"Put it back in the inbox" = "受信箱に戻す"
+"Undo" = "元に戻す"
+"Dismiss (⌘Z still brings it back)" = "閉じる(⌘Z でまだ戻せます)"
+"Inbox clear" = "受信箱は空です"
+"Nothing's waiting on you" = "待っている物はありません"
+"That's the end of the inbox" = "受信箱はここまでです"
+"You're all caught up" = "全部見終わりました"

@@ -1,0 +1,5 @@
+replace: if ago == "now" {
+with: if ago == threadbear_core::ja::TABLE.iter().find(|e| e.0 == "now").map_or("now", threadbear_core::ja::t) {
+"{why} · started {}" = "{why} · {}から"
+"just now" = "たった今"
+"{ago} ago" = "{ago}前"

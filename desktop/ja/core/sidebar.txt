@@ -1,0 +1,189 @@
+replace: fn weekday_name<Tz: TimeZone>(d: &DateTime<Tz>) -> &'static str {
+with: fn ja_word(en: &'static str) -> &'static str { crate::ja::TABLE.iter().find(|e| e.0 == en).map_or(en, crate::ja::t) } fn weekday_name<Tz: TimeZone>(d: &DateTime<Tz>) -> &'static str {
+replace: WEEKDAYS[d.weekday().num_days_from_monday() as usize]
+with: ja_word(WEEKDAYS[d.weekday().num_days_from_monday() as usize])
+replace: let day_month = format!("{} {}", date.day(), MONTHS[date.month0() as usize]);
+with: let day_month = ja_format!("{1}{0}日", "{} {}", date.day(), ja_word(MONTHS[date.month0() as usize]));
+replace: MONTHS[date.month0() as usize],
+with: ja_word(MONTHS[date.month0() as usize]),
+replace: (Some(day), clock_text) => format!("{day} {clock_text}"),
+with: (Some(day), clock_text) => format!("{} {clock_text}", ja_word(day)),
+replace: pub fn background_detail(tasks: &[BackgroundTask]) -> String {
+with: pub fn background_detail(tasks: &[BackgroundTask]) -> String { crate::ja::english(|| ja_background_detail(tasks)) } fn ja_background_detail(tasks: &[BackgroundTask]) -> String {
+replace all: tip += &format!(", or {} at the latest", until_words(time, now));
+with: tip += &crate::ja::english(|| format!(", or {} at the latest", until_words(time, now)));
+
+skip "hibernating"  # 一覧の節の鍵(match の型)
+skip "running"  # サブエージェントの状態の値(match の型)
+skip "star"  # 記号の名前
+skip "archivebox"  # 同上
+skip "trash"  # 同上
+skip "clock"  # 同上
+skip "pawprint"  # 同上
+skip "bell"  # 同上
+skip "sunset"  # 同上
+skip "sunrise"  # 同上
+skip "briefcase"  # 同上
+skip "schedule"  # ランナーの startedBy の kind の値
+skip "shell"  # 裏の仕事の種類の鍵
+skip "other"  # 同上
+skip "hour"  # 休止の選びの id(shell.rs の Command と合わせる)
+skip "evening"  # 同上
+skip "monday"  # 同上
+skip "idle"  # ランナーに合わせるスレッドの状態の値
+
+tip "Remove star" = "スターを外す"
+tip "Star: keep at the top" = "スター: 一番上に置いておく"
+tip "Hibernate" = "休止する"
+tip "Archive" = "アーカイブする"
+tip "Wake" = "起こす"
+tip "Unarchive" = "アーカイブから戻す"
+tip "Delete chat…" = "チャットを削除…"
+
+"{seconds}s" = "{seconds} 秒"
+"{minutes}m" = "{minutes} 分"
+"{hours}h" = "{hours} 時間"
+"{hours}h {}m" = "{hours} 時間 {} 分"
+"now" = "今"
+"{}m" = "{} 分"
+"{}h" = "{} 時間"
+"{day_month} {}" = "{}年{day_month}"
+"Mon" = "月曜"
+"Tue" = "火曜"
+"Wed" = "水曜"
+"Thu" = "木曜"
+"Fri" = "金曜"
+"Sat" = "土曜"
+"Sun" = "日曜"
+"Jan" = "1月"
+"Feb" = "2月"
+"Mar" = "3月"
+"Apr" = "4月"
+"May" = "5月"
+"Jun" = "6月"
+"Jul" = "7月"
+"Aug" = "8月"
+"Sep" = "9月"
+"Oct" = "10月"
+"Nov" = "11月"
+"Dec" = "12月"
+
+"{twelve}:{:02} {}" = "{1}{twelve}:{0:02}"
+"am" = "午前"
+"pm" = "午後"
+"Waiting for room · {}" = "空きを待っています · {}"
+"any moment now" = "もうすぐ"
+"at {time}" = "{time}に"
+tip "tomorrow" = "明日"
+"yesterday" = "昨日"
+"{} {} {}, {}: {}" = "{2}{1}日 {0} {3}: {4}"
+
+"Finishing" = "仕上げ中"
+"sub-agent" = "サブエージェント"
+"job" = "ジョブ"
+"monitor" = "モニター"
+"task" = "タスク"
+"1 {word}" = "{word} 1 件"
+"{n} {word}s" = "{word} {n} 件"
+tip "{name} (finished)" = "{name}(終了)"
+
+"\"{}\" and {} more" = "\"{}\" ほか {} 件"
+"Waiting on {names}" = "{names} を待っています"
+"Thinking…" = "考え中…"
+tip " and " = "と"
+tip " finishes" = "が終わる"
+tip " finish" = "が終わる"
+tip "finishes" = "終わる"
+tip "Back when {what}" = "{what}と戻ります"
+tip ", or {} at the latest" = "。遅くとも {} には戻ります"
+tip "Working out when from \"{}\"" = "\"{}\" から、いつにするかを考えています"
+tip "Back when {topic}" = "{topic}と戻ります"
+tip "Back when you next talk about {topic}" = "次に{topic}の話をした時に戻ります"
+tip "The agent" = "エージェント"
+tip "You" = "あなた"
+tip "{tip}. {who} said \"{}\"." = "{tip}。{who}の言葉: \"{}\"。"
+"Waiting for the app update" = "アプリの更新を待っています"
+tip "Carries on once Threadbear restarts onto what this thread landed, which it does by itself when you leave it idle." = "このスレッドが入れた物で Threadbear が再起動すると続きます。触らずにおけば、ひとりでに再起動します。"
+tip "{unlanded}. Back when {}" = "{unlanded}。{}と戻ります"
+"Waiting to land" = "land 待ち"
+tip "Woke up after hibernating for {}" = "{}休止してから起きました"
+tip "Woke up from hibernating" = "休止から起きました"
+tip "a minute" = "1 分"
+tip "{minutes} minutes" = "{minutes} 分"
+tip "an hour" = "1 時間"
+tip "{hours} hours" = "{hours} 時間"
+tip "a day" = "1 日"
+tip "{days} days" = "{days} 日"
+
+"Couldn't move" = "移せませんでした"
+"Move cancelled" = "移すのをやめました"
+"Moving to {name}" = "{name} に移しています"
+"Waiting for connection" = "接続を待っています"
+tip "The internet dropped during its turn. It carries on by itself once the connection is back." = "ターンの途中でインターネットが切れました。つながり直すと、ひとりでに続きます。"
+"Back on update" = "更新で戻ります"
+"Back on restart" = "再起動で戻ります"
+"Back {}" = "{}に戻ります"
+"Woke up" = "起きました"
+tip "Scheduled: {}" = "予定: {}"
+"Working {elapsed}" = "作業中 {elapsed}"
+tip "Working" = "作業中"
+"Failed" = "失敗"
+tip "The last turn failed" = "前のターンが失敗しました"
+"Stopped" = "停止"
+tip "Stopped when the runner restarted" = "ランナーの再起動で止まりました"
+
+"Untitled project" = "無題のプロジェクト"
+"You: {asked}" = "あなた: {asked}"
+"Schedule" = "予定"
+"Started by another thread" = "別のスレッドが始めました"
+"Started by another thread: {f}" = "別のスレッドが始めました: {f}"
+"Started by the librarian" = "司書が始めました"
+"Started by the librarian, from: {f}" = "司書が始めました。元: {f}"
+"Started by {}" = "{} が始めました"
+
+"Archiving" = "アーカイブ"
+"Hibernating" = "休止"
+"{verb} and stop the background work?" = "{doing}して、裏の作業を止めますか?"
+"This thread still has {what} in the background. {doing} it now stops them." = "このスレッドは、まだ裏で{what}が動いています。今{doing}すると止まります。"
+"is waiting for you" = "あなたを待っています"
+"is still working" = "まだ作業中です"
+"{verb} and stop the turn?" = "{doing}して、ターンを止めますか?"
+"This thread {state}. {doing} it now stops its turn." = "このスレッドは{state}。今{doing}するとターンが止まります。"
+
+"1 hour" = "1 時間"
+"This evening, 6 pm" = "今晩 午後6時"
+"Tomorrow, 9 am" = "明日 午前9時"
+"Next Monday, 9 am" = "次の月曜 午前9時"
+"Wake when…" = "起こす時を決める…"
+"at the weekend, in a few weeks, next time I talk about woodworking" = "週末に、数週間後に、次に木工の話をした時に"
+"Until the runner restarts" = "ランナーの再起動まで"
+"Pick a time…" = "時刻を選ぶ…"
+
+"Sub-agent" = "サブエージェント"
+"{t} sub-agent" = "{t} サブエージェント"
+"Starting" = "開始中"
+"Done" = "完了"
+"Failed: {summary}" = "失敗: {summary}"
+"1 tool call" = "ツール呼び出し 1 回"
+"{n} tool calls" = "ツール呼び出し {n} 回"
+"from {}" = "{} から"
+"Untitled" = "無題"
+"Running in the background" = "裏で実行中"
+"Running" = "実行中"
+
+tip "its Claude login" = "その Claude のログイン"
+tip "Claude refused the cloud token for {login}. Open the thread to make a new one; the message goes once it's set." = "Claude が {login} のクラウドトークンを断りました。スレッドを開いて新しく作ってください。できるとメッセージが送られます。"
+tip "{login} has no cloud token yet. Open the thread to make one; the message goes once it's set." = "{login} にはまだクラウドトークンがありません。スレッドを開いて作ってください。できるとメッセージが送られます。"
+"Needs a cloud token" = "クラウドトークンが要ります"
+"Waiting for room" = "空きを待っています"
+tip "Its virtual runner has as many machines up as it's allowed. It wakes, with the message, when one sleeps." = "仮想ランナーは、許された数のマシンを全部動かしています。どれかが眠ると、メッセージを持って起きます。"
+"Not answering" = "応答がありません"
+tip "Its machine hasn't checked in for five minutes. Threadbear is asking the provider about it." = "マシンから 5 分間連絡がありません。Threadbear がプロバイダーに問い合わせています。"
+"Starting a machine" = "マシンを起動中"
+tip "A machine is booting for it and getting the repo. The message goes once it's up." = "マシンを起動して repo を取っています。立ち上がるとメッセージが送られます。"
+"Waking" = "起こしています"
+tip "Its machine is coming back for the message." = "メッセージのためにマシンが戻ってきています。"
+"Asleep" = "眠っています"
+tip "Its machine sleeps while the thread's idle. A message wakes it." = "スレッドが動いていない間、マシンは眠ります。メッセージで起きます。"
+"Couldn't start" = "起動できませんでした"
+tip "A machine couldn't be started for it. The next message tries again." = "マシンを起動できませんでした。次のメッセージでもう一度試します。"

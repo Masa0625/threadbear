@@ -1,0 +1,155 @@
+made: icon_tooltip
+
+skip "reason"  # ランナーの JSON の鍵
+skip "commit"  # 同上
+skip "subject"  # 同上
+skip "checkout"  # 同上
+skip "date"  # 同上
+skip "message"  # 同上
+skip "idle"  # ランナーが送る状態の値
+skip "off"  # 同上
+skip "cli"  # 同上
+skip "unknown"  # 同上
+skip "auto"  # 同上
+skip "running"  # 同上(match の腕で if が付く所)
+skip "bell"  # 選びの記号の名前
+skip "nosign"  # 同上
+skip " Merge its commit {c}, the one its signature was checked for."  # エージェントへの依頼文のかけら
+skip " Its commit is {c}, the one its signature was checked for."  # 同上
+skip "Bring in Mike's release {} ({} new change{}) to this copy of Threadbear.{} Follow docs/bringing-in-updates.md, and ask me before it lands."  # エージェントへの依頼文
+skip "Mike's release {} has {} new change{} for this copy of Threadbear. Before bringing any of it in, talk me through it: what's in it that I'd notice, anything that touches or clashes with the changes I've made in this copy, and anything risky. Section 1 of docs/bringing-in-updates.md says how to see both sides.{} Don't change anything yet; once we've talked it over, I'll say whether to bring it in, and then follow that doc."  # 同上
+skip "{} Mike's release of {}"  # スレッドの題になってランナーに渡る(利用者の中身)
+skip "Discuss"  # 同上
+skip "Bring in"  # 同上
+
+"You changed the old app in 1 place that isn't in this one yet. Port it to rebuild it here, or dismiss it." = "古いアプリで 1 か所変えた所が、まだこのアプリにありません。移してここで作り直すか、閉じてください。"
+"You changed the old app in {n} places that aren't in this one yet. Port each to rebuild it here, or dismiss it." = "古いアプリで {n} か所変えた所が、まだこのアプリにありません。それぞれ移してここで作り直すか、閉じてください。"
+"{more} more" = "ほか {more} 件"
+"{} more" = "ほか {} 件"
+"1 minute" = "1 分"
+"{n} minutes" = "{n} 分"
+
+"%-d %b" = "%-m月%-d日"
+"{day} {}" = "{month}月{day}日{0:.0}"
+
+"Updates" = "更新"
+"The runner needs updating" = "ランナーの更新が要ります"
+"The runner's update didn't work" = "ランナーの更新がうまくいきませんでした"
+"The runner updates when your Mac restarts" = "ランナーは Mac の再起動で更新されます"
+"The runner is updating" = "ランナーを更新しています"
+"The app isn't following main" = "アプリが main を追っていません"
+"A runner isn't following GitHub's main" = "GitHub の main を追っていないランナーがあります"
+"Everything is up to date" = "全部最新です"
+"The app's and the runner's updates failed" = "アプリとランナーの更新が失敗しました"
+"The app's update failed" = "アプリの更新が失敗しました"
+"The runner's update failed" = "ランナーの更新が失敗しました"
+"Updates for the app and the runner" = "アプリとランナーの更新"
+"An app update" = "アプリの更新"
+"A runner update" = "ランナーの更新"
+" from Mike" = "(Mike から)"
+
+"In your app" = "今のアプリに入っています"
+"Ready" = "準備できました"
+"In this build" = "このビルドに入っています"
+"Landed after it, in the next one" = "その後に入ったので、次のビルドで"
+"In the next build" = "次のビルドで"
+"Waiting for the app" = "アプリを待っています"
+
+"This runner isn't following GitHub's main properly: {p}" = "このランナーは GitHub の main を正しく追っていません: {p}"
+"{} isn't following GitHub's main properly: {}" = "{} は GitHub の main を正しく追っていません: {}"
+"1 new change{suffix}" = "新しい変更 1 件{suffix}"
+"{n} new changes{suffix}" = "新しい変更 {n} 件{suffix}"
+"Your next release for everyone else is waiting: {why}." = "みんなへの次のリリースは待っています: {why}。"
+"Your last release for everyone else is {tag}." = "みんなへの最後のリリースは {tag} です。"
+"Mike's release of {} has {}." = "Mike の{}のリリースには、{}があります。"
+"Mike hasn't made a release yet." = "Mike はまだリリースを出していません。"
+"You're up to date with Mike's release of {}." = "Mike の{}のリリースまで取り込んであります。"
+"Checking for Mike's releases." = "Mike のリリースを確かめています。"
+"Couldn't check for Mike's releases{}" = "Mike のリリースを確かめられませんでした{}"
+"." = "。"
+"1 important fix" = "大事な直し 1 件"
+"{n} important fixes" = "大事な直し {n} 件"
+"Every change" = "全部の変更"
+"added" = "追加"
+"changed" = "変更"
+"fixed" = "直し"
+"{n} {k}" = "{k} {n}"
+", " = "、"
+
+"main to settle" = "main が落ち着くの"
+"a quiet minute" = "静かな 1 分"
+"{} quiet minutes" = "静かな {n} 分{0:.0}"
+"{n} quiet minutes" = "静かな {n} 分"
+"The app's next version ({staged}) is ready. It switches in {n}s if you leave the app alone, or now." = "アプリの次の版({staged})ができました。アプリに触らなければ {n} 秒で切り替わります。今すぐでもかまいません。"
+"The app's next version ({staged}) is ready. It switches in once {why}, or now." = "アプリの次の版({staged})ができました。{why}したら切り替わります。今すぐでもかまいません。"
+"The app's next version ({staged}) is ready. It switches in when you're not using the app, or now." = "アプリの次の版({staged})ができました。アプリを使っていない時に切り替わります。今すぐでもかまいません。"
+"Building the app from main on {host}, {so_far} in." = "{host} で main からアプリをビルドしています({so_far}経過)。"
+"The app's next version is queued on {host}, waiting for what it's running to finish ({so_far} so far)." = "アプリの次の版は {host} の順番待ちです。今動いている物が終わるのを待っています({so_far}経過)。"
+"The app's next version is queued on {host} behind 1 other run ({so_far} so far)." = "アプリの次の版は {host} で、ほか 1 件の後ろに並んでいます({so_far}経過)。"
+"The app's next version is queued on {host} behind {n} other runs ({so_far} so far)." = "アプリの次の版は {host} で、ほか {n} 件の後ろに並んでいます({so_far}経過)。"
+"The app has a new version on main, waiting for {host}, which has been busy with other work for {so_far}." = "main にアプリの新しい版があります。{host} を待っています({so_far}の間ほかの仕事中)。"
+"Building the app from main." = "main からアプリをビルドしています。"
+"The app has a new version on main, waiting for a Mac to build it on." = "main にアプリの新しい版があります。ビルドする Mac を待っています。"
+"The app has a new version on main, waiting for {} before building." = "main にアプリの新しい版があります。ビルドの前に{}を待っています。"
+"The app's last build from main failed. The log says why." = "main からのアプリの前のビルドが失敗しました。理由は記録にあります。"
+"The app isn't following main: {why}." = "アプリが main を追っていません: {why}。"
+"The app is up to date." = "アプリは最新です。"
+"The app is up to date ({r})." = "アプリは最新です({r})。"
+"A new version of the app is ready." = "アプリの新しい版ができました。"
+"The app's next version is queued behind other work." = "アプリの次の版は、ほかの仕事の後ろに並んでいます。"
+"Building the app's next version." = "アプリの次の版をビルドしています。"
+"The app's last build failed." = "アプリの前のビルドが失敗しました。"
+
+" at {c}" = " ({c})"
+"Building the runner from main{at}{what}." = "main{at} からランナーをビルドしています{what}。"
+"The runner from main{at} is built and starting." = "main{at} のランナーができて、立ち上がっています。"
+"The runner couldn't update to main{at}{}" = "ランナーを main{at} に更新できませんでした{}"
+"1 thread is finishing its turn on the previous version. It moves to the new one when the turn ends." = "1 つのスレッドが前の版でターンを仕上げています。ターンが終わると新しい版に移ります。"
+"{n} threads are finishing their turns on the previous version. Each moves to the new one when its turn ends." = "{n} のスレッドが前の版でターンを仕上げています。それぞれターンが終わると新しい版に移ります。"
+"launch.mjs has changed on main." = "main で launch.mjs が変わりました。"
+"The runner's update didn't work: {}" = "ランナーの更新がうまくいきませんでした: {}"
+"it didn't say why." = "理由は知らされていません。"
+"{why} It's updated once the runner itself is, a few minutes after main." = "{why}ランナーそのものの更新の後、main から数分で更新されます。"
+"{why} Updating it stops nothing; the new one starts next time your Mac restarts." = "{why}更新しても何も止まりません。新しい物は次に Mac を再起動した時に始まります。"
+"{why} The update is in place, and starts next time your Mac restarts." = "{why}更新は置いてあり、次に Mac を再起動した時に始まります。"
+"Updating Threadbear Runner. Nothing stops; the new one starts next time your Mac restarts." = "Threadbear Runner を更新しています。何も止まりません。新しい物は次に Mac を再起動した時に始まります。"
+"Update it" = "更新する"
+tip "Put the new Threadbear Runner in place. Nothing stops; it starts next time your Mac restarts." = "新しい Threadbear Runner を置きます。何も止まりません。次に Mac を再起動した時に始まります。"
+"Try again" = "もう一度"
+tip "Run the update again" = "更新をもう一度流す"
+"Updating" = "更新中"
+tip "Threadbear Runner is updating" = "Threadbear Runner を更新しています"
+"This runner doesn't say how its updates are going." = "このランナーは、更新の進み具合を知らせてきません。"
+"The runner is up to date." = "ランナーは最新です。"
+
+"{installed}, up to date" = "{installed}、最新"
+", an update is available" = "、更新があります"
+", {v} available" = "、{v} があります"
+"The new version" = "新しい版"
+"{name} {version} is held back, investigating why" = "{name} {version} は止めてあります。理由を調べています"
+"{name} {version} is held back{}" = "{name} {version} は止めてあります{}"
+" because {reason}" = "。理由: {reason}"
+"{name} isn't installed" = "{name} は入っていません"
+"Set by hand in runner.json, so Threadbear leaves it alone" = "runner.json で手で決めてあるので、Threadbear は触りません"
+"Update" = "更新"
+"Update anyway" = "それでも更新"
+"Go back to {previous}" = "{previous} に戻す"
+" to {t}" = " {t} に"
+"Installing {name}{}" = "{name}{} を入れています"
+"Updating {name}{to}" = "{name} を{to}更新しています"
+"Waiting to update {name}{to}" = "{name} を{to}更新するのを待っています"
+"Couldn't update {name}{to}" = "{name} を{to}更新できませんでした"
+"Automatic" = "自動"
+"Ask me" = "聞く"
+"Off" = "切"
+"Checked at {clock}" = "{clock} に確かめました"
+"tomorrow" = "明日"
+"yesterday" = "昨日"
+"Sun" = "日曜"
+"Mon" = "月曜"
+"Tue" = "火曜"
+"Wed" = "水曜"
+"Thu" = "木曜"
+"Fri" = "金曜"
+"Sat" = "土曜"
+"Checked {day} {clock}" = "{day} {clock} に確かめました"

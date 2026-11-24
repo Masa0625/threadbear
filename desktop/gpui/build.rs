@@ -25,6 +25,9 @@ fn main() {
             println!("cargo:rustc-link-arg-bins=-Wl,--stack,8388608");
         }
     }
+    #[path = "../ja/mirror.rs"]
+    mod ja;
+    ja::gpui();
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         // The older asset-loading calls work on every macOS this runs on;
         // their deprecation warnings aren't worth an availability split.

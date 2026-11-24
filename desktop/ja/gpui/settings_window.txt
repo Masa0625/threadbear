@@ -1,0 +1,210 @@
+tip-method: tip
+
+replace: title: Some(tab.title().into()),
+with: title: Some(crate::ja_tip::shown_str(tab.title()).into()),
+replace: window.set_window_title(tab.title());
+with: window.set_window_title(crate::ja_tip::shown_str(tab.title()));
+replace: tab.title(),
+with: crate::ja_tip::to_table_english(tab.title()),
+replace: .child(tab.title())
+with: .child(crate::ja_tip::shown_str(tab.title()))
+
+replace: .child(title.to_owned())
+with: .child(crate::ja_tip::faces(|| title).shown)
+replace: let (about, title) = (SharedString::from(about.to_owned()), title.to_owned());
+with: let ja_about = crate::ja_tip::faces(|| about); let (about, title) = (ja_about.shown, title.to_owned());
+replace: let trigger_tip = about.clone();
+with: let trigger_tip = ja_about.name;
+
+replace: let tip = format!("Start a thread about {title}");
+with: let tip = crate::ja_tip::both(|| { let title = crate::ja_tip::faces(|| title).shown; threadbear_core::ja_format!("「{title}」についてスレッドを始める", "Start a thread about {title}") });
+replace all: .aria_label(tip.clone())
+with: .aria_label(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&tip)).name)
+
+replace: let tip: SharedString = match choice {
+with: let tip = { crate::ja_tip::both(|| -> SharedString { match choice {
+replace: _ => format!("Use {} as the accent", choice.title()).into(),
+with: _ => threadbear_core::ja_format!("{}をアクセントにする", "Use {} as the accent", choice.title()).into(), } })
+
+replace: self.switch_owned(id.to_owned(), on, tip.to_owned(), cx, set)
+with: self.switch_owned(id.to_owned(), on, threadbear_core::ja::made(tip, || crate::ja_tip::shown_str(tip).to_owned()), cx, set)
+replace: self.menu_owned(id.to_owned(), label, face, tip.to_owned(), choices, cx)
+with: self.menu_owned(id.to_owned(), label, face, threadbear_core::ja::made(tip, || crate::ja_tip::shown_str(tip).to_owned()), choices, cx)
+
+replace: .tooltip(tip.clone());
+with: .tooltip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&tip)).shown);
+replace all: .tooltip(tip)
+with: .tooltip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&tip)).shown)
+
+replace all: let (hover, secondary, fg) = (
+with: let tip = crate::ja_tip::to_table_english(tip); let (hover, secondary, fg) = (
+
+replace: .child(c.label)
+with: .child(crate::ja_tip::shown_str(c.label))
+replace: div().child(label).into_any_element(),
+with: div().child(crate::ja_tip::shown_str(label)).into_any_element(),
+
+replace: , font, cx),
+with: , font, cx), row(crate::ja_language::label(), crate::ja_language::control(self.app.clone(), self.tab.title(), cx), cx),
+replace: "tab": self.tab.name(),
+with: "tab": self.tab.name(), "language": crate::ja_language::dump(&self.app, cx),
+
+skip "gearshape"  # 左の列の記号の名前
+skip "sparkles"  # 同上
+skip "iphone"  # 同上
+skip "keyboard"  # 同上と、自動操作の節の名前(Tab::name)
+skip "folder"  # 記号の名前
+skip "general"  # 自動操作の節の名前(Tab::name)
+skip "models"  # 同上
+skip "pools"  # 同上
+skip "runners"  # 同上
+skip "devices"  # 同上
+skip "threadbear"  # 窓の app_id
+skip "up"  # キーの名前
+skip "down"  # 同上
+skip "macos"  # cfg! の OS の名前
+skip "windows"  # 同上
+skip "claude"  # 提供元の id
+skip "About Threadbear's {title} settings: "  # エージェントへの依頼文(新しいスレッドの箱に入る)。見出しは英語で入る
+skip "check whether it's installed and working, or why a diagram or panel isn't showing."  # 画面に出ない
+skip "change it, or anything else about how threads run. Most settings aren't shown here, and your agent edits them in runner.json."  # 同上
+skip "explain what a review found, change who reviews, or turn reviews on or off for you."  # 同上
+skip "read it with tb activity and tell you what's in it."  # 同上
+skip "check whether it's holding your Mac awake right now."  # 同上
+skip "suggest work for a login with room left, or turn this off for you."  # 同上
+skip "bring in Mike's latest release now, or change how often this happens."  # 同上
+skip "explain an experiment, or turn one on or off for you."  # 同上
+skip "check on it if something seems wrong. Your agent can read its status and logs."  # 同上
+skip "change any of it for you."  # 同上
+skip "change it for you."  # 同上
+skip "change when the ding plays."  # 同上
+skip "draft some for you to paste here. Agents can't change them themselves: only what's saved here is given to them."  # 同上
+skip "change this, or which model and effort new threads start on. Your agent edits them in runner.json."  # 同上
+skip "add several at once. Your agent keeps them in runner.json."  # 同上
+
+tip "General" = "一般"
+tip "Models" = "モデル"
+tip "Pools" = "プール"
+tip "Runners" = "ランナー"
+tip "Phone & browser" = "スマホとブラウザ"
+tip "Keyboard" = "キーボード"
+
+"Settings didn't open: {e}" = "設定が開きませんでした: {e}"
+"Start a thread about this" = "これについてスレッドを始める"
+"Opens a new thread to ask your agent about these settings" = "新しいスレッドを開いて、この設定についてエージェントに聞く"
+tip "Start a thread about {title}" = "「{title}」についてスレッドを始める"
+"Not connected to the runner." = "ランナーにつながっていません。"
+"This runner is too old for settings. It gets them when it next updates." = "このランナーは古く、設定を使えません。次の更新で使えるようになります。"
+"Loading…" = "読み込み中…"
+
+tip "Appearance" = "見た目"
+tip "How Threadbear looks, for Threadbear only. Same as the Mac follows System Settings > Appearance, and the first accent is the Mac's own. Text size is the same as View > Zoom (⌘= and ⌘-). The bear colours are Wayne Sutton's, from his fork." = "Threadbear だけの見た目です。Mac に合わせる時はシステム設定 > 外観 に従い、最初のアクセントは Mac の物です。文字の大きさは View > Zoom(⌘= と ⌘-)と同じです。クマの色は Wayne Sutton さんのフォークから来ています。"
+tip "How Threadbear looks, for Threadbear only. Same as Windows follows Settings > Personalization > Colors. Text size is the same as View > Zoom (Ctrl+= and Ctrl+-). The bear colours are Wayne Sutton's, from his fork." = "Threadbear だけの見た目です。Windows に合わせる時は 設定 > 個人用設定 > 色 に従います。文字の大きさは View > Zoom(Ctrl+= と Ctrl+-)と同じです。クマの色は Wayne Sutton さんのフォークから来ています。"
+tip "How Threadbear looks, for Threadbear only. Text size is the same as View > Zoom (Ctrl+= and Ctrl+-). The bear colours are Wayne Sutton's, from his fork." = "Threadbear だけの見た目です。文字の大きさは View > Zoom(Ctrl+= と Ctrl+-)と同じです。クマの色は Wayne Sutton さんのフォークから来ています。"
+tip "Always light, whatever the system is set to" = "システムの設定にかかわらず、いつも明るく"
+tip "Always dark, whatever the system is set to" = "システムの設定にかかわらず、いつも暗く"
+"Accent" = "アクセント"
+"Use the Mac's accent colour" = "Mac のアクセントカラーを使う"
+"Use blue, the usual accent" = "いつものアクセントの青を使う"
+tip "Use {} as the accent" = "{}をアクセントにする"
+"Spacing" = "間隔"
+tip "Roomy" = "ゆったり"
+tip "More room between rows and turns" = "行とターンの間を広く"
+tip "Compact" = "詰める"
+tip "Rows and turns closer together, so more fit" = "行とターンの間を詰めて、多く入るように"
+"Text size" = "文字の大きさ"
+tip "Smaller" = "小さく"
+tip "Text and everything else a step smaller (90%)" = "文字もほかも一段小さく(90%)"
+tip "Normal" = "ふつう"
+tip "Text at its usual size (100%)" = "文字をいつもの大きさに(100%)"
+tip "Larger" = "大きく"
+tip "Text and everything else a step larger (110%)" = "文字もほかも一段大きく(110%)"
+"Font" = "フォント"
+
+tip "Panels" = "パネル"
+tip "To move a panel, drag its title or tab. With this on, pressing and holding anywhere on a panel picks it up too. A panel with its title hidden can always be moved that way, as it has nothing else to drag it by." = "パネルを動かすには、題かタブをドラッグします。これを入れると、パネルのどこを長押ししても持ち上がります。題を隠したパネルは、ほかにつかむ所が無いので、いつでもこの方法で動かせます。"
+tip "Press and hold anywhere on a panel to move it, not just on its title or tab" = "題やタブだけでなく、パネルのどこを長押ししても動かせるようにする"
+"Move panels by their background" = "パネルを背景で動かす"
+tip "Quitting" = "終了"
+tip "Quit Threadbear (⌘Q or the Threadbear menu) asks first, so a stray ⌘Q doesn't close the app. Ticking Don't ask again turns this off; turn it back on here. Your threads keep running on the runner while the app is closed." = "Threadbear を終える時(⌘Q か Threadbear のメニュー)は先に聞くので、うっかり ⌘Q を押してもアプリは閉じません。「Don't ask again」に印を付けるとこれが切れ、ここで入れ直せます。アプリを閉じている間も、スレッドはランナーで動き続けます。"
+tip "Ask to confirm when you quit Threadbear" = "Threadbear を終える時に確かめる"
+"Ask before quitting" = "終える前に聞く"
+
+tip "Notifications" = "通知"
+tip "A soft ding when a thread finishes working: its reply is done, it's waiting for your answer, or it hit an error. It plays wherever you are, even in another app, and stays quiet for a thread you stopped yourself. Notifications themselves are in System Settings > Notifications." = "スレッドが働き終えた時(返事ができた、あなたの答えを待っている、エラーになった)に小さく鳴ります。ほかのアプリにいても鳴り、自分で止めたスレッドでは鳴りません。通知そのものは システム設定 > 通知 にあります。"
+tip "A soft ding when a thread is done and ready for you" = "スレッドが終わってあなたの番になった時に、小さく鳴らす"
+"Play a sound when a thread finishes" = "スレッドが終わった時に音を鳴らす"
+"Sound" = "音"
+"Which ding plays" = "どの音を鳴らすか"
+"Volume" = "音量"
+"How loud the ding is" = "音の大きさ"
+"Play" = "鳴らす"
+tip "Hear the ding" = "音を聞く"
+
+tip "New threads" = "新しいスレッド"
+tip "Where a new thread starts when you don't pick a folder." = "フォルダを選ばない時に、新しいスレッドが始まる場所です。"
+"Default folder" = "既定のフォルダ"
+"Choose…" = "選ぶ…"
+tip "Pick the folder new threads start in" = "新しいスレッドが始まるフォルダを選ぶ"
+"Choose" = "選ぶ"
+tip "Instructions" = "指示"
+tip "Threadbear gives these to every thread's agent in every session, on every login, Claude and Codex alike. A chat that's already going hears a change before your next message." = "Threadbear は、どのログインでも、Claude でも Codex でも、すべてのスレッドのエージェントに、すべてのセッションでこれを渡します。進んでいる会話には、次のメッセージの前に変更が伝わります。"
+"For example: I build with React, TypeScript and Convex. Write plainly and briefly." = "例: React と TypeScript と Convex で作っています。平易に短く書いてください。"
+"Cleared" = "消しました"
+"Saved" = "保存しました"
+"The file is gone, or can't be read." = "ファイルが無いか、読めません。"
+"Show Newer Version" = "新しい版を見る"
+tip "The file has changed again. Show what it holds now" = "ファイルがまた変わりました。今の中身を見る"
+"Clear" = "消す"
+tip "Delete these, so agents are given no standing instructions" = "これを消して、エージェントにいつもの指示を渡さないようにする"
+"Use These" = "これを使う"
+"Give every agent exactly the text shown here" = "ここに出ている文をそのまま、どのエージェントにも渡す"
+"Something other than Settings changed these, so agents aren't being given them." = "設定の外で書き換えられたので、エージェントには渡していません。"
+
+tip "Code review" = "コードレビュー"
+tip "When a thread changes code and is done, another lab tries to break the change in a review thread of its own. Your thread waits for what it finds, fixes what holds up, and tells you in its reply.\n\nA change gets one reviewer: the first in Every change that isn't the thread's own provider and has a login with room, so when one runs out the next takes over. Drag them to change the order. A big or risky change gets everyone in Big or risky changes at once, or one reviewer from Every change if fewer than two of them can review. With no other lab to hand, a fresh session of the thread's own provider reviews." = "スレッドがコードを変えて終わると、別の会社の AI が、自分のレビュー用のスレッドでその変更を崩そうとします。あなたのスレッドは見つかった物を待ち、当たっている物を直して、返事で知らせます。\n\n1 つの変更のレビュー役は 1 つです。「Every change」の中で、そのスレッドと別の提供元で、余裕のあるログインを持つ最初の物が受け持つので、1 つが上限に達すると次が引き継ぎます。順はドラッグで変えられます。大きい変更や危ない変更には「Big or risky changes」の全員が一度に付き、その中でレビューできる物が 2 つ未満なら「Every change」から 1 つが付きます。ほかの会社の AI がいない時は、そのスレッドと同じ提供元の新しいセッションがレビューします。"
+tip "Have another lab check each code change a thread makes" = "スレッドが変えたコードを、毎回別の会社の AI に確かめてもらう"
+"Review code changes before a thread is done" = "スレッドが終わる前にコードの変更をレビューする"
+tip "Activity log" = "操作の記録"
+tip "When you ask a thread to change Threadbear, its agent can check this log first to see how you really use the app. It notes the buttons, rows and menu items you use (by their tooltips and titles), your shortcuts, the threads and pages you open, and when you send or answer something, never what you type. It stays on this Mac for 30 days and Threadbear never sends it anywhere." = "スレッドに Threadbear を変えるよう頼むと、エージェントはまずこの記録を見て、あなたが実際にアプリをどう使っているかを知れます。使ったボタン・行・メニューの項目(ツールチップと題で)、ショートカット、開いたスレッドとページ、何かを送ったり答えたりした時を記録します。打った文は記録しません。記録はこの Mac に 30 日残り、Threadbear はどこにも送りません。"
+tip "Note what you click and open in this app" = "このアプリで押した物と開いた物を記録する"
+"Keep an activity log" = "操作の記録を残す"
+tip "Sleep" = "スリープ"
+tip "While any thread is working, and for three minutes after, your Mac won't go to sleep on its own, so a long turn, or one you started from your phone, isn't cut off halfway. The screen still sleeps." = "どれかのスレッドが動いている間と、その後の 3 分間は、Mac がひとりでにスリープしません。長いターンや、スマホから始めたターンが途中で切れないためです。画面はスリープします。"
+tip "Stop your Mac sleeping on its own while a thread is working" = "スレッドが動いている間、Mac がひとりでにスリープしないようにする"
+"Keep the Mac awake while threads work" = "スレッドが動いている間は Mac を起こしておく"
+tip "Usage" = "使用量"
+tip "A day before a login's week resets, if at the rate it's going 30% or more of it would be left, a thread on that login suggests work to spend it on and asks before starting any. The Usage panel's Find work for it does the same whenever you like." = "ログインの 1 週間分がリセットされる前の日に、今のペースだと 30% 以上が余りそうなら、そのログインのスレッドが使い道の仕事を挙げ、始める前に聞きます。使用量のパネルの「仕事を探す」でも、いつでも同じことができます。"
+tip "Start a thread with ideas a day before a login's week resets with lots of it unused" = "ログインの 1 週間分が大きく余ったままリセットされる前の日に、使い道の案を出すスレッドを始める"
+"Tell me when a week's about to go unused" = "1 週間分が使われずに終わりそうな時に知らせる"
+
+tip "Full sync" = "全部を同期"
+tip "Send tool output and diffs to your Convex deployment" = "ツールの出力と差分を、自分の Convex に送る"
+"Send tool output to Convex" = "ツールの出力を Convex に送る"
+tip "Updates from Mike" = "Mike からの更新"
+tip "When Mike has a release your copy doesn't have, Threadbear starts a thread that merges it in and runs the checks, then asks you before it lands. Never more than one at a time. A release Mike marks important doesn't wait." = "あなたの写しに無いリリースを Mike が出すと、Threadbear はそれを取り込んで確かめを流すスレッドを始め、入れる前にあなたに聞きます。一度に 1 つまでです。Mike が大事と印を付けたリリースは待ちません。"
+tip "How often a thread starts to bring in Mike's new releases" = "Mike の新しいリリースを取り込むスレッドを、どのくらいの間隔で始めるか"
+"Bring them in" = "取り込み"
+tip "Experiments" = "実験中の機能"
+tip "New features still being tried out. Each starts off; turn one on to try it, and off again whenever you like. Once one has proved itself it becomes a standard part of Threadbear and its switch goes. The ⓘ beside each says what it does." = "まだ試している新しい機能です。どれも切ってあり、試すには入れて、いつでも切れます。役に立つと分かった物は Threadbear の標準になり、スイッチは無くなります。それぞれの横の ⓘ に、何をするかが書いてあります。"
+tip "Turn {} off" = "{} を切る"
+tip "Try {}" = "{} を試す"
+tip "Runner" = "ランナー"
+tip "The background program that runs your threads. It updates itself." = "スレッドを動かす、裏で動くプログラムです。ひとりでに更新されます。"
+"Version" = "版"
+"Not connected" = "つながっていません"
+tip "Web runtime" = "Web ランタイム"
+
+tip "Small jobs" = "小さな仕事"
+tip "Titles and the librarian use Haiku on one of this pool's Claude logins, the one with the most room, and count towards its usage. When every login is out of room they wait. None turns them off." = "題と司書は、このプールの Claude のログインのうち一番余裕のある物で Haiku を使い、その使用量に数えます。どのログインも上限に達している時は待ちます。「なし」にすると止まります。"
+tip "Which pool's Claude logins write titles and do the librarian's work" = "題を書き、司書の仕事をする Claude のログインを、どのプールから使うか"
+"Run on" = "使うプール"
+"{id}, which has no Claude login" = "{id}(Claude のログインがありません)"
+"None" = "なし"
+tip "Private folders" = "非公開のフォルダ"
+tip "Nothing from threads in these folders, or in folders inside them, is sent for titles and other small jobs." = "これらのフォルダと、その中のフォルダのスレッドからは、題などの小さな仕事に何も送りません。"
+"None yet" = "まだありません"
+tip "Stop keeping this folder private" = "このフォルダを非公開から外す"
+"Add Folder…" = "フォルダを追加…"
+tip "Keep a folder's threads from ever being sent for titles and other small jobs" = "フォルダのスレッドを、題などの小さな仕事に一切送らないようにする"
+"Add" = "追加"

@@ -1,0 +1,4 @@
+replace: tip: impl Into<SharedString>,
+with: tip: impl Into<SharedString> + AsRef<str>,
+replace: tip: tip.into(),
+with: tip: crate::ja_tip::to_table_english(tip),

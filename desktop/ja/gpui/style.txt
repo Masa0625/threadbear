@@ -1,0 +1,40 @@
+"Same as the Mac" = "Mac に合わせる"
+"Same as Windows" = "Windows に合わせる"
+"Same as the system" = "システムに合わせる"
+"Light" = "ライト"
+"Dark" = "ダーク"
+
+"The Mac's accent" = "Mac のアクセント"
+"Blue" = "ブルー"
+"Fur" = "ファー"
+"Honey" = "ハニー"
+"Berry" = "ベリー"
+"Rose" = "ローズ"
+"Plum" = "プラム"
+"Sky" = "スカイ"
+"Moss" = "モス"
+"Slate" = "スレート"
+
+"System" = "システム"
+"Serif" = "セリフ"
+"Monospaced" = "等幅"
+skip "Allo"  # フォントの固有の名前(フォントの家族の名前にも使う)
+
+skip "system"  # 設定のファイルに書く値(Appearance・Accent・Font の name)
+skip "light"  # 同上
+skip "dark"  # 同上
+skip "fur"  # 同上
+skip "honey"  # 同上
+skip "berry"  # 同上
+skip "rose"  # 同上
+skip "plum"  # 同上
+skip "sky"  # 同上
+skip "moss"  # 同上
+skip "slate"  # 同上
+skip "serif"  # 同上
+skip "mono"  # 同上
+skip "allo"  # 同上
+skip "Charter"  # フォントの家族の名前
+skip "Georgia"  # 同上
+skip "Noto Serif"  # 同上
+skip "heading"  # 試験の group の名前

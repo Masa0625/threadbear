@@ -1,0 +1,6 @@
+replace: fn tip(self, text: impl Into<SharedString>) -> Self {
+with: fn tip(self, text: impl Into<SharedString>) -> Self { self.ja_tip(crate::ja_tip::Faces::of_shared(text.into())) } fn ja_tip(self, ja_faces: crate::ja_tip::Faces) -> Self {
+replace: let text: SharedString = text.into();
+with: let text: SharedString = ja_faces.name;
+replace: Tooltip::new(shown.clone())
+with: Tooltip::new(ja_faces.shown.clone())

@@ -1,0 +1,87 @@
+replace: pub tip: Option<String>,
+with: pub tip: Option<crate::ja_tip::Faces>,
+replace: pub(crate) fn tip(mut self, tip: impl Into<String>) -> Self {
+with: pub(crate) fn tip(mut self, tip: impl crate::ja_tip::IntoFaces) -> Self {
+replace: self.tip = Some(tip.into());
+with: self.tip = Some(crate::ja_tip::IntoFaces::into_faces(tip));
+replace: wrapper = wrapper.tip(tip);
+with: wrapper = wrapper.ja_tip(tip);
+replace: .tip(threadbear_core::ja_format!("{}。クリックで会話を読む。",
+with: .tip(crate::ja_tip::faces(|| threadbear_core::ja_format!("{}。クリックで会話を読む。",
+replace: side::subagent_status_text(s)
+with: side::subagent_status_text(s))
+
+replace: .child(h.title.clone());
+with: .child(if threadbear_core::ja::on() && [fold::NEEDS_YOU, fold::SCHEDULED, fold::SUBAGENTS, fold::STARTED_THREADS, fold::PINNED, fold::FILES, fold::LINKS, fold::CHANGES].contains(&h.key.as_str()) { crate::ja_table::TABLE.iter().find(|(en, _)| *en == h.title).map_or_else(|| h.title.clone(), |(_, ja)| (*ja).to_owned()) } else { h.title.clone() });
+replace: .child(self.section_title(thread, section)),
+with: .child({ let shown = self.section_title(thread, section); match crate::ja_table::TABLE.iter().find(|(en, _)| threadbear_core::ja::on() && [HIGHLIGHTS, PATCHES, FILES, BROWSER].contains(&section) && *en == shown) { Some((_, ja)) => (*ja).to_owned(), None => shown } }),
+
+skip "merge"  # PR の操作の名前(ランナーに送る)
+skip "folder"  # 記号の名前
+skip "link"  # 同上
+skip "number"  # 同上
+skip "pencil"  # 同上
+skip "clock"  # 同上
+skip "checkmark"  # 同上
+skip "xmark"  # 同上
+skip "minus"  # 同上
+skip "square"  # 同上
+skip "subagents"  # 「すべて見る」の行の鍵
+skip "started"  # 同上
+skip "commits"  # 同上
+skip "links"  # 同上と、行の種類の鍵
+skip "pinned"  # 行の種類の鍵
+skip "files"  # 同上と、自動操作の dump の値
+skip "changes"  # 行の種類の鍵
+skip "none"  # 自動操作の dump の値
+skip "explanation"  # 同上
+skip "preview {}"  # 同上
+skip "highlights"  # 同上
+skip "patches"  # 同上
+skip "browser"  # 同上
+skip "panel {id}"  # 同上
+
+tip "Needs you" = "あなた待ち"
+tip "Scheduled" = "予定"
+tip "Sub-agents" = "サブエージェント"
+tip "Threads it started" = "始めたスレッド"
+tip "Pinned" = "ピン留め"
+tip "Files" = "ファイル"
+tip "Links" = "リンク"
+tip "Changes" = "変更"
+tip "Show" = "見る"
+tip "Hide" = "隠す"
+
+tip "Highlights" = "ハイライト"
+tip "Patches" = "パッチ"
+tip "Browser" = "ブラウザ"
+tip "Back to {back_to}" = "{back_to} に戻る"
+
+"Edit the schedule" = "予定を編集する"
+"Open this thread" = "このスレッドを開く"
+"Open in its app" = "そのアプリで開く"
+tip "Open {address}" = "{address} を開く"
+"{}. Click to read its transcript." = "{}。クリックで会話を読む。"
+tip "Done" = "済んだ"
+tip "Not done" = "まだ"
+
+"This runner doesn't keep highlights yet." = "このランナーは、まだハイライトを持てません。"
+"Nothing here yet. Files, links and commits from this thread show up here as it works." = "まだ何もありません。このスレッドが作業すると、ファイル・リンク・コミットがここに出ます。"
+"Pick a thread to see its Highlights." = "スレッドを選ぶと、そのハイライトが出ます。"
+"A thread that's gone" = "無くなったスレッド"
+"Untitled" = "無題"
+"New thread in {}" = "{} の新しいスレッド"
+"Show all {count}" = "{count} 件を全部見る"
+"Couldn't remove {title}: {}" = "{title} を外せませんでした: {}"
+
+"Copy Image" = "画像をコピー"
+"Preview here" = "ここでプレビュー"
+"Open" = "開く"
+"Copy path" = "パスをコピー"
+"Open in Panel" = "パネルで開く"
+"Copy link" = "リンクをコピー"
+"Copy sha" = "sha をコピー"
+"Remove" = "外す"
+"Edit" = "編集"
+"Show all schedules" = "予定を全部見る"
+"Open in New Panel" = "新しいパネルで開く"
