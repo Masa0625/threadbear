@@ -12,6 +12,12 @@
 
 自動操作の build(`--features automation`、specs)は、`THREADBEAR_LANG` で頼まれない限り英語。試験は app を立ち上げないので、いつも英語(`threadbear_core::ja` の既定)。決めるのは `start.rs`。
 
+利用者は、設定 › 一般 › 見た目 の一番下の「言語」の行(英語の画面では Language)で選ぶ。メニューは「Mac に合わせる / English / 日本語」で、選ぶと 2 の `"language"` に残り、全部の窓がその場で描き直される(`language.rs`)。Mac のメニューバーは立ち上げの時に作るので、次の立ち上げから変わる。
+
+## 訳す範囲
+
+画面に出る文が多い順の 10 ファイル(`settings_window.rs`・core の `sidebar.rs`・core の `updates.rs`・`shell.rs`・`schedule_editor.rs`・`header.rs`・`web_panels.rs`・`highlights.rs`・`hello.rs`・`rows/cards.rs`)と、同じ画面のために足した gpui の `sidebar.rs`・`style.rs`・`push_button.rs`。`open_anything.rs`・`projects.rs`・`librarian.rs` の表は、日本語にした時に壊れる比べ(`"now"`)を直すための一部だけ。ほかのファイルの文と、ランナーから届く文は英語のまま。
+
 ## 仕組み
 
 - `gpui/Cargo.toml` の `[[bin]] path` と `core/Cargo.toml` の `[lib] path` が、`gpui/ja/main.rs`・`core/ja/lib.rs` を指す。どちらも写しを `include!` で取り込むだけのファイル。cargo fmt は、そこの `#[cfg(any())] mod` から元の `src/` を整える。
