@@ -31,8 +31,9 @@
 |---|---|
 | `"English" = "日本語"` | 書いた所で言語を選ぶ。literal は `t(&TABLE[i])` に、`format!("English", …)` は `ja_format!("日本語", "English", …)` になる(引数はそのまま。日本語で使わない位置の引数は `{0:.0}` で消せる)。 |
 | `tip "English" = "日本語"` | 書いた所では英語のまま。id や読み上げの名前を兼ねる文に使う。描く所で `ja_tip::shown_str` が日本語にする(`replace:` で差す)。 |
-| `skip "English"` | 画面に出ない文。「表に無い」の一覧から外す。理由を `#` の後に書く。 |
+| `skip "English"  # 理由` | 画面に出ない文。「表に無い」の一覧から外す。`#` の後の理由が無いと build が止まる。 |
 | `replace: <コード>` と次の `with: <コード>` | 写しのコードを 1 か所だけ置き換える。当たる数が 1 でなければ build が止まる。`replace all:` は 1 か所以上の全部。 |
+| `replace <n> of <m>: <コード>` と次の `with: <コード>` | 当たる数が m の時だけ、その n 番目を置き換える(m は 2 以上)。前後を含めても 1 か所に絞れない時だけ使う(shell.txt の `tb_menu_icons();` は、1 か所目が extern の宣言)。m が違えば build が止まる。 |
 | `made: <fn の名前>` | その関数の答えがツールチップになる(更新のアイコン)。英語と日本語で 1 回ずつ作る。 |
 | `tip-macro: <macro> <何番目>` | その macro の何番目の引数がツールチップか(header.rs の `tipped!` は 2)。 |
 | `tip-method: tip` | そのファイルの `.tip(…)` は Tip のツールチップ。二度作る形に替える。 |
@@ -44,7 +45,7 @@
 日本語にするのは、コードが表から作った文だと、届き方で分かる物だけ。字面では見ない。だから、ランナーの文や利用者の題がたまたま表と同じ字面でも、そのまま出る。
 
 1. **二度作る**: 写したファイルの `.tip(…)` と `tipped!` は、文を英語でもう一度作り(`ja::english`)、名前にする(`ja_tip::faces`)。変数を渡す所は、写しがその `let` を二度作る形に替える(`ja_tip::both`)。利用者の文はどちらの回も同じなので、そのまま出る。
-2. **表の置き場で見分ける**: `t(&TABLE[i])` の答えは表そのものの `&'static str` なので、引数や `PushButton` を通って届いても、置き場(番地)でどの行か分かる。`push_button.txt` は、PushButton がツールチップを SharedString で持つ時に置き場を保つ(`ja_tip::keep`)。String に写されると分からなくなり、そのまま出る。表の文が、`keep` の無い helper(`impl Into<SharedString>` で受けてすぐ SharedString にする物。highlights.rs の `tipped`・`tipped_as` と、それを呼ぶ activity_panels.rs の `push_button` など)に渡ると、名前と読み上げが日本語になる。そういう文は表で `tip` にする(名前は英語、表示も英語。updates.rs の `launcher_button` のツールチップ)。helper に `keep` を差すには、受ける型に `+ AsRef<str>` が要り、それが呼ぶ側の generic な helper にも広がるので、まだしていない。
+2. **表の置き場で見分ける**: `t(&TABLE[i])` の答えは表そのものの `&'static str` なので、引数や `PushButton` を通って届いても、置き場(番地)でどの行か分かる。`push_button.txt` は、PushButton がツールチップを SharedString で持つ時に置き場を保つ(`ja_tip::to_table_english`)。String に写されると分からなくなり、そのまま出る。表の文が、`to_table_english` の無い helper(`impl Into<SharedString>` で受けてすぐ SharedString にする物。highlights.rs の `tipped`・`tipped_as` と、それを呼ぶ activity_panels.rs の `push_button` など)に渡ると、名前と読み上げが日本語になる。そういう文は表で `tip` にする(名前は英語、表示も英語。updates.rs の `launcher_button` のツールチップ)。helper に `to_table_english` を差すには、受ける型に `+ AsRef<str>` が要り、それが呼ぶ側の generic な helper にも広がるので、まだしていない。
 3. **`made` の答え**: 更新のアイコンのツールチップは、String と構造体を通ってレールのボタンに届く。`made:` の関数の、一番新しい答えと文全体が同じ時だけ日本語にする(`ja::made_shown`)。1 行だけや表の 1 語と同じ文は当たらない。
 
 `.tip(…)` を二度作る形に替えるのは、表に `tip-method: tip` と書いたファイルだけ(highlights.rs の PaneRow のように、自分の `tip` を持つ型があるため)。
@@ -57,7 +58,7 @@
 
 ## build が止まる時と warning
 
-- 止まる: `replace:` の当たる数が違う・`made:` の関数が無い・写しや表を書けない・`replace:` や `made:` のある表のファイルが無い・表の書き方の誤り・`src/main.rs` の `#![…]` が `gpui/ja/main.rs` と食い違う。どの表の何行目かを言う。
+- 止まる: `replace:` の当たる数が違う・`made:` の関数が無い・`skip` に理由が無い・写しや表を書けない・`replace:` や `made:` のある表のファイルが無い・表の書き方の誤り・`src/main.rs` の `#![…]` が `gpui/ja/main.rs` と食い違う。どの表の何行目かを言う。mirror.rs の差し替えが同じ所で重なった時も止まる(mirror.rs の誤り。写したファイルの何行目かを言う)。
 - warning: 表だけにある文(Mike が文を変えた・消した。英語に戻る)と、ツールチップの注意。
 
 ## 表に無い文を見つける
@@ -76,7 +77,7 @@ build script は、表・写したファイル(表のあるファイルと、子
 
 1. `ja/gpui/<名前>.txt` を作る(ファイルを置くだけで写しの対象になる)。
 2. `THREADBEAR_JA_REPORT=1` で check を流し、warning の「表に無い」の一覧を表に写して訳す。画面に出ない物は `skip` にする。
-3. ファイルに自分の `tipped!` があれば、`header.txt` と同じ `tip-macro:` と、macro を二度作る形にする `replace:` を足す。`.tip(…)` が Tip の物なら `tip-method: tip` を足す。id や読み上げの名前を兼ねる文と、`keep` の無い helper に渡る文は `tip` にする(描く所に `shown_str` を差せば表示は日本語)。
+3. ファイルに自分の `tipped!` があれば、`header.txt` と同じ `tip-macro:` と、macro を二度作る形にする `replace:` を足す。`.tip(…)` が Tip の物なら `tip-method: tip` を足す。id や読み上げの名前を兼ねる文と、`to_table_english` の無い helper に渡る文は `tip` にする(描く所に `shown_str` を差せば表示は日本語)。
 4. warning の「ツールチップの注意」を見て、名前が日本語になる所が無いかを確かめる。
 5. ほかのファイルが、表で訳した関数の答えを英語の literal と比べていないかを探す(`relative_short` の答えを `"now"` と比べる所など)。日本語では当たらなくなるので、比べる所のファイルにも表を置き、`replace:` で比べる相手を同じ行の今の言語の字にする(`desktop/ja/core/open_anything.txt`)。
 

@@ -5,7 +5,7 @@ with: title: Some(crate::ja_tip::shown_str(tab.title()).into()),
 replace: window.set_window_title(tab.title());
 with: window.set_window_title(crate::ja_tip::shown_str(tab.title()));
 replace: tab.title(),
-with: crate::ja_tip::keep(tab.title()),
+with: crate::ja_tip::to_table_english(tab.title()),
 replace: .child(tab.title())
 with: .child(crate::ja_tip::shown_str(tab.title()))
 
@@ -37,7 +37,7 @@ replace all: .tooltip(tip)
 with: .tooltip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&tip)).shown)
 
 replace all: let (hover, secondary, fg) = (
-with: let tip = crate::ja_tip::keep(tip); let (hover, secondary, fg) = (
+with: let tip = crate::ja_tip::to_table_english(tip); let (hover, secondary, fg) = (
 
 replace: .child(c.label)
 with: .child(crate::ja_tip::shown_str(c.label))

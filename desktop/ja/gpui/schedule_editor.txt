@@ -1,9 +1,9 @@
 tip-method: tip
 
 replace: .aria_label(tip.to_owned())
-with: .aria_label(crate::ja_tip::keep(tip))
+with: .aria_label(crate::ja_tip::to_table_english(tip))
 replace: .aria_label(save_tip.to_owned())
-with: .aria_label(crate::ja_tip::keep(save_tip))
+with: .aria_label(crate::ja_tip::to_table_english(save_tip))
 
 replace: const WEEKDAYS: [(u32, &str); 7] = [
 with: const WEEKDAYS_JA: [&str; 7] = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"]; fn weekday_shown(day: u32, name: &'static str) -> &'static str { if threadbear_core::ja::on() { WEEKDAYS_JA.get(day as usize).copied().unwrap_or(name) } else { name } } const WEEKDAYS: [(u32, &str); 7] = [

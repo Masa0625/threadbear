@@ -24,7 +24,7 @@ enum Language {
 impl Language {
     const ALL: [Language; 3] = [Language::System, Language::English, Language::Japanese];
 
-    fn name(self) -> &'static str {
+    fn setting_value(self) -> &'static str {
         match self {
             Language::System => "system",
             Language::English => "en",
@@ -32,8 +32,8 @@ impl Language {
         }
     }
 
-    fn from_name(name: &str) -> Language {
-        match name.trim() {
+    fn from_setting_value(value: &str) -> Language {
+        match value.trim() {
             "en" => Language::English,
             "ja" => Language::Japanese,
             _ => Language::System,
@@ -69,17 +69,17 @@ fn chosen(saved: &Saved) -> Language {
         .extra
         .get(KEY)
         .and_then(Value::as_str)
-        .map_or(Language::System, Language::from_name)
+        .map_or(Language::System, Language::from_setting_value)
 }
 
-fn keep(saved: &mut Saved, choice: Language) {
+fn set_in_settings(saved: &mut Saved, choice: Language) {
     saved
         .extra
-        .insert(KEY.to_owned(), Value::from(choice.name()));
+        .insert(KEY.to_owned(), Value::from(choice.setting_value()));
 }
 
 fn pick(app: &mut Threadbear, choice: Language, cx: &mut Context<Threadbear>) {
-    keep(&mut app.settings.saved, choice);
+    set_in_settings(&mut app.settings.saved, choice);
     app.save_settings_soon(cx);
     threadbear_core::ja::set_japanese(choice.japanese());
     cx.refresh_windows();
@@ -141,7 +141,7 @@ pub(crate) fn dump(app: &WeakEntity<Threadbear>, cx: &App) -> Value {
         .upgrade()
         .map_or(Language::System, |a| chosen(&a.read(cx).settings.saved));
     serde_json::json!({
-        "picked": picked.name(),
+        "picked": picked.setting_value(),
         "screen": if threadbear_core::ja::on() { "ja" } else { "en" },
     })
 }
@@ -150,7 +150,7 @@ pub(crate) fn dump(app: &WeakEntity<Threadbear>, cx: &App) -> Value {
 mod tests {
     // Named one by one: gpui_kit's glob has a `test` of its own, which
     // would stand in for the built-in one.
-    use super::{chosen, keep, Language, KEY};
+    use super::{chosen, set_in_settings, Language, KEY};
     use crate::settings::{Saved, Settings};
     use serde_json::Value;
     use std::path::{Path, PathBuf};
@@ -168,16 +168,16 @@ mod tests {
     }
 
     #[test]
-    fn each_choice_is_kept_by_its_name_and_anything_else_is_the_system_s() {
+    fn each_choice_is_saved_as_its_setting_value_and_anything_else_is_the_system_s() {
         for choice in Language::ALL {
-            assert_eq!(Language::from_name(choice.name()), choice);
+            assert_eq!(Language::from_setting_value(choice.setting_value()), choice);
         }
-        assert_eq!(Language::Japanese.name(), "ja");
-        assert_eq!(Language::from_name("fr"), Language::System);
+        assert_eq!(Language::Japanese.setting_value(), "ja");
+        assert_eq!(Language::from_setting_value("fr"), Language::System);
         let mut saved = Saved::default();
         assert_eq!(chosen(&saved), Language::System, "nothing picked yet");
         saved.extra.insert(KEY.into(), Value::from(3));
-        assert_eq!(chosen(&saved), Language::System, "not a name");
+        assert_eq!(chosen(&saved), Language::System, "not a setting value");
         saved.extra.insert(KEY.into(), Value::from("en"));
         assert_eq!(chosen(&saved), Language::English);
     }
@@ -186,7 +186,7 @@ mod tests {
     fn saving_the_choice_keeps_the_other_settings() {
         let path = file("keeps", r#"{ "appearance": "dark", "accent": "plum" }"#);
         let mut s = Settings::load_from(path.clone());
-        keep(&mut s.saved, Language::Japanese);
+        set_in_settings(&mut s.saved, Language::Japanese);
         s.save_checked().unwrap();
         let w = written(&path);
         assert_eq!(w["language"], "ja");
@@ -198,7 +198,7 @@ mod tests {
     fn the_choice_stays_when_another_setting_is_saved() {
         let path = file("stays", r#"{ "appearance": "light" }"#);
         let mut s = Settings::load_from(path.clone());
-        keep(&mut s.saved, Language::English);
+        set_in_settings(&mut s.saved, Language::English);
         s.save_checked().unwrap();
         let mut s = Settings::load_from(path.clone());
         assert_eq!(chosen(&s.saved), Language::English);
@@ -225,7 +225,7 @@ mod tests {
 
 #[cfg(test)]
 mod settings_window_tips {
-    use crate::ja_tip::{both, faces, keep, shown_str, Faces};
+    use crate::ja_tip::{both, faces, shown_str, to_table_english, Faces};
     use threadbear_core::ja;
 
     fn row(en: &str) -> &'static (&'static str, &'static str) {
@@ -277,7 +277,7 @@ mod settings_window_tips {
     fn a_sidebar_row_kept_for_tipped_is_named_in_english() {
         let _ja = Japanese::on();
         let (en, ja_words) = *row("Phone & browser");
-        let kept = keep(en);
+        let kept = to_table_english(en);
         assert_eq!(kept.as_str(), en);
         assert_eq!(pair(&Faces::of_shared(kept)), (en, ja_words));
         assert_eq!(shown_str(en), ja_words);

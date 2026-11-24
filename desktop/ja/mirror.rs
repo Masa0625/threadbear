@@ -12,11 +12,11 @@ pub fn gpui() {
     let out = out_dir();
     let mut report = mirror(&Crate {
         dir: dir.clone(),
-        root: "src/main.rs",
-        stub: "ja/main.rs",
+        source_root: "src/main.rs",
+        cargo_root: "ja/main.rs",
         tables: dir.join("../ja/gpui"),
         side: Side::Gpui,
-        first: None,
+        first_line_prefix: String::new(),
         extra: vec![
             path_mod(&dir.join("../ja/start.rs"), "mod ja_start;"),
             path_mod(&dir.join("../ja/tip.rs"), "mod ja_tip;"),
@@ -40,16 +40,16 @@ pub fn core() {
     let dir = manifest_dir();
     let mut report = mirror(&Crate {
         dir: dir.clone(),
-        root: "src/lib.rs",
-        stub: "ja/lib.rs",
+        source_root: "src/lib.rs",
+        cargo_root: "ja/lib.rs",
         tables: dir.join("../ja/core"),
         side: Side::Core,
         // The copy's root is inside include!, where `crate::ja_format!` can't
         // be named (a rustc rule), so `#[macro_use]` lets it go by its name.
-        first: Some(format!(
+        first_line_prefix: format!(
             "#[macro_use] {} ",
             path_mod(&dir.join("../ja/runtime.rs"), "pub mod ja;")
-        )),
+        ),
         extra: vec![format!(
             "#[cfg(test)] {}",
             path_mod(&dir.join("../ja/mirror.rs"), "mod ja_mirror_tests;")
@@ -113,11 +113,11 @@ impl Side {
 
 pub struct Crate {
     pub dir: PathBuf,
-    pub root: &'static str,
-    pub stub: &'static str,
+    pub source_root: &'static str,
+    pub cargo_root: &'static str,
     pub tables: PathBuf,
     pub side: Side,
-    pub first: Option<String>,
+    pub first_line_prefix: String,
     pub extra: Vec<String>,
     pub main_call: Option<String>,
     pub out: PathBuf,
@@ -125,13 +125,41 @@ pub struct Crate {
 
 #[derive(Default)]
 pub struct Report {
-    pub translated: Vec<(String, usize, String)>,
-    pub kept: Vec<(String, usize, String, String)>,
-    pub missing: Vec<(String, usize, String)>,
-    pub stale: Vec<(String, String)>,
-    pub notes: Vec<(String, usize, String)>,
+    pub translated: Vec<Spot>,
+    pub kept: Vec<Kept>,
+    pub missing: Vec<Spot>,
+    pub stale: Vec<TableOnly>,
+    pub notes: Vec<TipNote>,
     pub errors: Vec<String>,
     pub watch: Vec<PathBuf>,
+}
+
+#[derive(Debug)]
+pub struct Spot {
+    pub file: String,
+    pub line: usize,
+    pub en: String,
+}
+
+#[derive(Debug)]
+pub struct Kept {
+    pub file: String,
+    pub line: usize,
+    pub en: String,
+    pub why: String,
+}
+
+#[derive(Debug)]
+pub struct TableOnly {
+    pub table: String,
+    pub entry: String,
+}
+
+#[derive(Debug)]
+pub struct TipNote {
+    pub file: String,
+    pub line: usize,
+    pub why: String,
 }
 
 impl Report {
@@ -140,16 +168,16 @@ impl Report {
             println!("cargo:rerun-if-changed={}", path.display());
         }
         println!("cargo:rerun-if-env-changed=THREADBEAR_JA_REPORT");
-        for (table, en) in &self.stale {
+        for TableOnly { table, entry } in &self.stale {
             println!(
-                "cargo:warning=ja: {table} の \"{en}\" がソースに無い(Mike が変えたら、表を直す)"
+                "cargo:warning=ja: {table} の \"{entry}\" がソースに無い(Mike が変えたら、表を直す)"
             );
         }
-        for (file, line, why) in &self.notes {
+        for TipNote { file, line, why } in &self.notes {
             println!("cargo:warning=ja: {file}:{line} {why}");
         }
         if std::env::var_os("THREADBEAR_JA_REPORT").is_some() {
-            for (file, line, en) in &self.missing {
+            for Spot { file, line, en } in &self.missing {
                 println!("cargo:warning=ja: 表に無い {file}:{line} \"{en}\"");
             }
         }
@@ -176,20 +204,26 @@ impl Report {
             self.stale.len(),
             self.notes.len()
         );
-        for (f, l, en) in &self.missing {
-            let _ = writeln!(s, "表に無い\t{f}:{l}\t{en}");
+        for Spot { file, line, en } in &self.missing {
+            let _ = writeln!(s, "表に無い\t{file}:{line}\t{en}");
         }
-        for (t, en) in &self.stale {
-            let _ = writeln!(s, "表だけ\t{t}\t{en}");
+        for TableOnly { table, entry } in &self.stale {
+            let _ = writeln!(s, "表だけ\t{table}\t{entry}");
         }
-        for (f, l, why) in &self.notes {
-            let _ = writeln!(s, "注意\t{f}:{l}\t{why}");
+        for TipNote { file, line, why } in &self.notes {
+            let _ = writeln!(s, "注意\t{file}:{line}\t{why}");
         }
-        for (f, l, en, why) in &self.kept {
-            let _ = writeln!(s, "英語のまま\t{f}:{l}\t{why}\t{en}");
+        for Kept {
+            file,
+            line,
+            en,
+            why,
+        } in &self.kept
+        {
+            let _ = writeln!(s, "英語のまま\t{file}:{line}\t{why}\t{en}");
         }
-        for (f, l, en) in &self.translated {
-            let _ = writeln!(s, "訳した\t{f}:{l}\t{en}");
+        for Spot { file, line, en } in &self.translated {
+            let _ = writeln!(s, "訳した\t{file}:{line}\t{en}");
         }
         s
     }
@@ -207,32 +241,32 @@ pub fn mirror(c: &Crate) -> Report {
         }
     }
     let mut m = Mirror { c, tables, report };
-    let root = c.dir.join(c.root);
-    let text = m.file(&root, true, Path::new(c.root));
+    let root = c.dir.join(c.source_root);
+    let text = m.file(&root, true, Path::new(c.source_root));
     // The copy's root is include!d, where `#![...]` and `//!` can't be.
     let (text, inner) = blank_inner_attributes(&text);
-    let stub = std::fs::read_to_string(c.dir.join(c.stub)).unwrap_or_default();
-    let stub_attrs = squash(&blank_inner_attributes(&strip_comments(&stub)).1.join(""));
+    let cargo_root = std::fs::read_to_string(c.dir.join(c.cargo_root)).unwrap_or_default();
+    let cargo_root_attrs = squash(
+        &blank_inner_attributes(&strip_comments(&cargo_root))
+            .1
+            .join(""),
+    );
     for attr in &inner {
-        if !stub_attrs.contains(&squash(attr)) {
+        if !cargo_root_attrs.contains(&squash(attr)) {
             m.report.errors.push(format!(
                 "{} の `{}` が {} に無い。写して揃える",
-                c.root,
+                c.source_root,
                 attr.lines().next().unwrap_or(""),
-                c.stub
+                c.cargo_root
             ));
         }
     }
-    let mut text = match &c.first {
-        Some(first) => format!("{first}{text}"),
-        None => text,
-    };
-    text.push('\n');
+    let mut text = format!("{}{text}\n", c.first_line_prefix);
     for line in &c.extra {
         text.push_str(line);
         text.push('\n');
     }
-    m.write(&c.out.join("ja").join(file_name(c.root)), &text);
+    m.write(&c.out.join("ja").join(file_name(c.source_root)), &text);
     let (file, declared) = c.side.table_file();
     m.write(&c.out.join("ja").join(file), &table_source(declared, &rows));
     m.finish();
@@ -256,11 +290,26 @@ struct Table {
     name: String,
     entries: Vec<Entry>,
     rules: Vec<Rule>,
-    made: Vec<(String, usize, bool)>,
-    tip_macros: Vec<(String, usize)>,
+    made: Vec<Made>,
+    tip_macros: Vec<TipMacro>,
     tip_methods: Vec<String>,
-    skips: Vec<(String, bool)>,
+    skips: Vec<Skip>,
     visited: bool,
+}
+
+struct Made {
+    function: String,
+    line: usize,
+}
+
+struct TipMacro {
+    name: String,
+    tip_arg: usize,
+}
+
+struct Skip {
+    en: String,
+    used: bool,
 }
 
 struct Entry {
@@ -274,8 +323,41 @@ struct Entry {
 struct Rule {
     find: String,
     with: String,
-    all: bool,
+    reach: Reach,
     line: usize,
+}
+
+#[derive(Clone, Copy)]
+enum Reach {
+    One,
+    All,
+    Nth { which: usize, of: usize },
+}
+
+impl Reach {
+    fn written(self) -> String {
+        match self {
+            Reach::One => "replace:".to_owned(),
+            Reach::All => "replace all:".to_owned(),
+            Reach::Nth { which, of } => format!("replace {which} of {of}:"),
+        }
+    }
+
+    fn expected(self) -> String {
+        match self {
+            Reach::One => "1 か所のはず".to_owned(),
+            Reach::All => "1 か所以上のはず".to_owned(),
+            Reach::Nth { of, .. } => format!("{of} か所のはず"),
+        }
+    }
+
+    fn fits(self, count: usize) -> bool {
+        match self {
+            Reach::One => count == 1,
+            Reach::All => count >= 1,
+            Reach::Nth { of, .. } => count == of,
+        }
+    }
 }
 
 fn load_tables(dir: &Path, report: &mut Report) -> BTreeMap<PathBuf, Table> {
@@ -325,38 +407,38 @@ fn parse_table(name: &str, text: &str) -> Result<Table, String> {
         skips: Vec::new(),
         visited: false,
     };
-    let mut pending: Option<(String, bool, usize)> = None;
+    let mut pending: Option<(String, Reach, usize)> = None;
     for (i, raw) in text.lines().enumerate() {
         let line = raw.trim();
         let at = || format!("{name}:{}", i + 1);
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some((all, code)) = line
-            .strip_prefix("replace all:")
-            .map(|c| (true, c))
-            .or_else(|| line.strip_prefix("replace:").map(|c| (false, c)))
-        {
+        if let Some(head) = replace_head(line) {
+            let (reach, code) = head.map_err(|why| format!("{}: {why}", at()))?;
             if pending.is_some() {
                 return Err(format!("{}: 前の replace: に with: が無い", at()));
             }
-            pending = Some((code.trim().to_owned(), all, i + 1));
+            pending = Some((code.trim().to_owned(), reach, i + 1));
             continue;
         }
         if let Some(code) = line.strip_prefix("with:") {
-            let (find, all, line) = pending
+            let (find, reach, line) = pending
                 .take()
                 .ok_or_else(|| format!("{}: with: の前に replace: が無い", at()))?;
             t.rules.push(Rule {
                 find,
                 with: code.trim().to_owned(),
-                all,
+                reach,
                 line,
             });
             continue;
         }
         if let Some(f) = line.strip_prefix("made:") {
-            t.made.push((f.trim().to_owned(), i + 1, false));
+            t.made.push(Made {
+                function: f.trim().to_owned(),
+                line: i + 1,
+            });
             continue;
         }
         if let Some(rest) = line.strip_prefix("tip-macro:") {
@@ -368,7 +450,10 @@ fn parse_table(name: &str, text: &str) -> Result<Table, String> {
             ) else {
                 return Err(format!("{}: tip-macro: <名前> <何番目> と書く", at()));
             };
-            t.tip_macros.push((mac.trim_end_matches('!').to_owned(), n));
+            t.tip_macros.push(TipMacro {
+                name: mac.trim_end_matches('!').to_owned(),
+                tip_arg: n,
+            });
             continue;
         }
         if let Some(method) = line.strip_prefix("tip-method:") {
@@ -378,8 +463,11 @@ fn parse_table(name: &str, text: &str) -> Result<Table, String> {
         if let Some(rest) = line.strip_prefix("skip ") {
             let (en, rest) = literal(rest.trim_start())
                 .ok_or_else(|| format!("{}: skip の \"…\" が読めない", at()))?;
-            end_of_line(rest).ok_or_else(|| format!("{}: 行の終わりに余分な物", at()))?;
-            t.skips.push((en.to_owned(), false));
+            reason(rest).ok_or_else(|| format!("{}: skip \"…\" の後に # と理由が要る", at()))?;
+            t.skips.push(Skip {
+                en: en.to_owned(),
+                used: false,
+            });
             continue;
         }
         t.entries
@@ -415,6 +503,42 @@ fn entry(line: &str) -> Result<Entry, &'static str> {
     })
 }
 
+fn replace_head(line: &str) -> Option<Result<(Reach, &str), &'static str>> {
+    if let Some(code) = line.strip_prefix("replace all:") {
+        return Some(Ok((Reach::All, code)));
+    }
+    if let Some(code) = line.strip_prefix("replace:") {
+        return Some(Ok((Reach::One, code)));
+    }
+    let rest = line.strip_prefix("replace ")?;
+    let nth = rest.split_once(':').and_then(|(head, code)| {
+        let mut words = head.split_whitespace();
+        match (
+            words.next().map(str::parse::<usize>),
+            words.next(),
+            words.next().map(str::parse::<usize>),
+            words.next(),
+        ) {
+            (Some(Ok(which)), Some("of"), Some(Ok(of)), None)
+                if 1 <= which && which <= of && of >= 2 =>
+            {
+                Some((Reach::Nth { which, of }, code))
+            }
+            _ => None,
+        }
+    });
+    Some(nth.ok_or(
+        "replace <何番目> of <当たる数>: と書く(何番目は 1 から当たる数まで、当たる数は 2 以上)",
+    ))
+}
+
+fn reason(rest: &str) -> Option<&str> {
+    rest.trim()
+        .strip_prefix('#')
+        .map(str::trim)
+        .filter(|why| !why.is_empty())
+}
+
 fn end_of_line(rest: &str) -> Option<()> {
     let rest = rest.trim();
     (rest.is_empty() || rest.starts_with('#')).then_some(())
@@ -433,7 +557,55 @@ fn literal(s: &str) -> Option<(&str, &str)> {
     None
 }
 
-type Edit = (usize, usize, String);
+enum Edit {
+    Insert {
+        at: usize,
+        text: String,
+    },
+    Replace {
+        start: usize,
+        end: usize,
+        with: String,
+    },
+}
+
+impl Edit {
+    fn insert(at: usize, text: impl Into<String>) -> Edit {
+        Edit::Insert {
+            at,
+            text: text.into(),
+        }
+    }
+
+    fn replace(start: usize, end: usize, with: impl Into<String>) -> Edit {
+        Edit::Replace {
+            start,
+            end,
+            with: with.into(),
+        }
+    }
+
+    fn start(&self) -> usize {
+        match self {
+            Edit::Insert { at, .. } => *at,
+            Edit::Replace { start, .. } => *start,
+        }
+    }
+
+    fn end(&self) -> usize {
+        match self {
+            Edit::Insert { at, .. } => *at,
+            Edit::Replace { end, .. } => *end,
+        }
+    }
+
+    fn new_text(&self) -> &str {
+        match self {
+            Edit::Insert { text, .. } => text,
+            Edit::Replace { with, .. } => with,
+        }
+    }
+}
 
 struct Mirror<'a> {
     c: &'a Crate,
@@ -480,7 +652,7 @@ impl Mirror<'_> {
                 let sinks = Sinks::find(&text, &toks, &table);
                 notes = sinks.rewrite(&text, &toks, &mut edits);
             }
-            self.made(&text, &toks, &mut table, &mut edits);
+            self.made(&text, &toks, &table, &mut edits);
             self.tables.insert(rel.to_path_buf(), table);
         }
         if is_root {
@@ -488,18 +660,22 @@ impl Mirror<'_> {
                 if !main_call(&text, &toks, call, &mut edits) {
                     self.report
                         .errors
-                        .push(format!("{} に `fn main() {{` が無い", self.c.root));
+                        .push(format!("{} に `fn main() {{` が無い", self.c.source_root));
                 }
             }
         }
-        let mut out = apply(&text, edits);
+        let mut out = apply(&file, &text, edits, &mut self.report.errors);
         if let Some(table) = self.tables.get(rel) {
             let mut rewritten = std::collections::BTreeSet::new();
             out = rules(&out, table, &file, &mut self.report.errors, &mut rewritten);
             notes.retain(|n| !rewritten.contains(&n.let_line));
         }
         for n in notes {
-            self.report.notes.push((file.clone(), n.line, n.why));
+            self.report.notes.push(TipNote {
+                file: file.clone(),
+                line: n.line,
+                why: n.why,
+            });
         }
         out
     }
@@ -566,8 +742,8 @@ impl Mirror<'_> {
                     };
                     let attr = format!("#[path = {:?}] ", clean(&target).display().to_string());
                     match given {
-                        Some(((s, e), _)) => edits.push((s, e, attr.trim_end().to_owned())),
-                        None => edits.push((toks[start].start, toks[start].start, attr)),
+                        Some(((s, e), _)) => edits.push(Edit::replace(s, e, attr.trim_end())),
+                        None => edits.push(Edit::insert(toks[start].start, attr)),
                     }
                     i += 3;
                     continue;
@@ -604,82 +780,84 @@ impl Mirror<'_> {
             };
             let line = text[..t.start].matches('\n').count() + 1;
             let ctx = walk.context(text, toks, i);
-            if let Some(skip) = table.skips.iter_mut().find(|(s, _)| s == content) {
-                skip.1 = true;
-            }
+            let skipped = match table.skips.iter_mut().find(|s| s.en == content) {
+                Some(skip) => {
+                    skip.used = true;
+                    true
+                }
+                None => false,
+            };
             let Some(&ei) = index.get(content) else {
-                let skipped = table.skips.iter().any(|(s, _)| s == content);
-                if ctx.ui && ctx.keep.is_none() && !skipped && looks_like_words(content) {
-                    self.report
-                        .missing
-                        .push((file.to_owned(), line, content.to_owned()));
+                let may_translate = matches!(ctx.treatment, Treatment::MayTranslate);
+                if may_translate && !skipped && looks_like_words(content) {
+                    self.report.missing.push(Spot {
+                        file: file.to_owned(),
+                        line,
+                        en: content.to_owned(),
+                    });
                 }
                 continue;
             };
             let entry = &mut table.entries[ei];
             entry.used = true;
-            if !ctx.ui {
-                continue;
-            }
-            if let Some(why) = ctx.keep {
-                self.report
-                    .kept
-                    .push((file.to_owned(), line, content.to_owned(), why));
-                continue;
-            }
             let row = entry.index;
-            match (entry.tip, ctx.format_head) {
-                (true, Some(_)) => {
-                    self.report.kept.push((
-                        file.to_owned(),
-                        line,
-                        content.to_owned(),
-                        "tip (format)".to_owned(),
-                    ));
-                    continue;
-                }
-                (true, None) => {
-                    edits.push((t.start, t.end, format!("{rows}[{row}].0")));
-                    self.report.kept.push((
-                        file.to_owned(),
-                        line,
-                        content.to_owned(),
-                        "tip".to_owned(),
-                    ));
-                    continue;
-                }
-                (false, Some((mac_start, open_end))) => edits.push((
-                    mac_start,
-                    open_end,
-                    format!("{}(\"{}\", ", self.c.side.format_macro(), entry.ja),
-                )),
-                (false, None) => {
-                    edits.push((t.start, t.end, format!("{runtime}::t(&{rows}[{row}])")))
-                }
+            let kept_english_because = match ctx.treatment {
+                Treatment::LeaveSilently => continue,
+                Treatment::KeepEnglish { why } => Some(why),
+                Treatment::MayTranslate => match (entry.tip, ctx.format_head) {
+                    (true, Some(_)) => Some("tip (format)".to_owned()),
+                    (true, None) => {
+                        edits.push(Edit::replace(t.start, t.end, format!("{rows}[{row}].0")));
+                        Some("tip".to_owned())
+                    }
+                    (false, Some((mac_start, open_end))) => {
+                        edits.push(Edit::replace(
+                            mac_start,
+                            open_end,
+                            format!("{}(\"{}\", ", self.c.side.format_macro(), entry.ja),
+                        ));
+                        None
+                    }
+                    (false, None) => {
+                        edits.push(Edit::replace(
+                            t.start,
+                            t.end,
+                            format!("{runtime}::t(&{rows}[{row}])"),
+                        ));
+                        None
+                    }
+                },
+            };
+            let (file, en) = (file.to_owned(), content.to_owned());
+            match kept_english_because {
+                Some(why) => self.report.kept.push(Kept {
+                    file,
+                    line,
+                    en,
+                    why,
+                }),
+                None => self.report.translated.push(Spot { file, line, en }),
             }
-            self.report
-                .translated
-                .push((file.to_owned(), line, content.to_owned()));
         }
     }
 
-    fn made(&mut self, text: &str, toks: &[Tok], table: &mut Table, edits: &mut Vec<Edit>) {
+    fn made(&mut self, text: &str, toks: &[Tok], table: &Table, edits: &mut Vec<Edit>) {
         let runtime = self.c.side.runtime();
-        for (name, line, found) in &mut table.made {
+        for Made { function, line } in &table.made {
             let bodies: Vec<(usize, usize)> = (0..toks.len().saturating_sub(1))
-                .filter(|&i| toks[i].is_ident(text, "fn") && toks[i + 1].is_ident(text, name))
+                .filter(|&i| toks[i].is_ident(text, "fn") && toks[i + 1].is_ident(text, function))
                 .filter_map(|i| fn_body(toks, i))
                 .collect();
             match bodies.as_slice() {
                 [(open, close)] => {
-                    *found = true;
-                    let at = toks[*open].end;
-                    edits.push((at, at, format!(" {runtime}::made({name:?}, || {{")));
-                    let end = toks[*close].start;
-                    edits.push((end, end, "})".to_owned()));
+                    edits.push(Edit::insert(
+                        toks[*open].end,
+                        format!(" {runtime}::made({function:?}, || {{"),
+                    ));
+                    edits.push(Edit::insert(toks[*close].start, "})"));
                 }
                 _ => self.report.errors.push(format!(
-                    "{}:{line}: made: {name} に当たる fn が {} 個(1 個のはず)",
+                    "{}:{line}: made: {function} に当たる fn が {} 個(1 個のはず)",
                     table.name,
                     bodies.len()
                 )),
@@ -697,12 +875,16 @@ impl Mirror<'_> {
                 ));
             }
             for e in t.entries.iter().filter(|e| !e.used) {
-                self.report.stale.push((t.name.clone(), e.en.clone()));
+                self.report.stale.push(TableOnly {
+                    table: t.name.clone(),
+                    entry: e.en.clone(),
+                });
             }
-            for (s, _) in t.skips.iter().filter(|(_, used)| !used) {
-                self.report
-                    .stale
-                    .push((t.name.clone(), format!("skip {s}")));
+            for skip in t.skips.iter().filter(|s| !s.used) {
+                self.report.stale.push(TableOnly {
+                    table: t.name.clone(),
+                    entry: format!("skip {}", skip.en),
+                });
             }
         }
     }
@@ -717,23 +899,39 @@ fn rules(
 ) -> String {
     let mut out = text.to_owned();
     for rule in &table.rules {
-        let count = out.matches(rule.find.as_str()).count();
-        let fits = if rule.all { count >= 1 } else { count == 1 };
-        if !fits {
+        let found: Vec<usize> = out
+            .match_indices(rule.find.as_str())
+            .map(|(at, _)| at)
+            .collect();
+        if !rule.reach.fits(found.len()) {
             errors.push(format!(
-                "{}:{}: replace{}: が写しの {file} の {count} か所に当たった({})。Mike が変えた所に合わせて表を直す: {}",
+                "{}:{}: {} が写しの {file} の {} か所に当たった({})。Mike が変えた所に合わせて表を直す: {}",
                 table.name,
                 rule.line,
-                if rule.all { " all" } else { "" },
-                if rule.all { "1 か所以上のはず" } else { "1 か所のはず" },
+                rule.reach.written(),
+                found.len(),
+                rule.reach.expected(),
                 rule.find
             ));
             continue;
         }
-        for (at, _) in out.match_indices(rule.find.as_str()) {
-            rewritten.insert(out[..at].matches('\n').count() + 1);
-        }
-        out = out.replace(rule.find.as_str(), &rule.with);
+        let line_of = |at: usize| out[..at].matches('\n').count() + 1;
+        out = match rule.reach {
+            Reach::Nth { which, .. } => {
+                let at = found[which - 1];
+                rewritten.insert(line_of(at));
+                format!(
+                    "{}{}{}",
+                    &out[..at],
+                    rule.with,
+                    &out[at + rule.find.len()..]
+                )
+            }
+            Reach::One | Reach::All => {
+                rewritten.extend(found.iter().map(|&at| line_of(at)));
+                out.replace(rule.find.as_str(), &rule.with)
+            }
+        };
     }
     out
 }
@@ -770,10 +968,10 @@ impl Sinks {
                 }
                 continue;
             }
-            let Some((_, n)) = table
+            let Some(TipMacro { tip_arg, .. }) = table
                 .tip_macros
                 .iter()
-                .find(|(name, _)| toks[i].is_ident(text, name))
+                .find(|m| toks[i].is_ident(text, &m.name))
             else {
                 continue;
             };
@@ -781,7 +979,8 @@ impl Sinks {
                 let Some(close) = matching(toks, open) else {
                     continue;
                 };
-                if let Some(&(a, b)) = args(text, toks, open, close).get(n.saturating_sub(1)) {
+                if let Some(&(a, b)) = args(text, toks, open, close).get(tip_arg.saturating_sub(1))
+                {
                     if b - a == 1 && toks[a].kind == Kind::Ident {
                         sinks.idents.push(a);
                     }
@@ -794,12 +993,12 @@ impl Sinks {
     fn rewrite(&self, text: &str, toks: &[Tok], edits: &mut Vec<Edit>) -> Vec<Note> {
         let mut notes = Vec::new();
         for &(tip, open, close) in &self.calls {
-            edits.push((
+            edits.push(Edit::replace(
                 toks[tip].start,
                 toks[open].end,
-                "ja_tip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&(".to_owned(),
+                "ja_tip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&(",
             ));
-            edits.push((toks[close].start, toks[close].start, ")))".to_owned()));
+            edits.push(Edit::insert(toks[close].start, ")))"));
         }
         let mut wrapped: Vec<usize> = Vec::new();
         let depth = depths(toks);
@@ -810,21 +1009,21 @@ impl Sinks {
                 Ok(Some(b)) if wrapped.contains(&b.let_at) => {}
                 Ok(Some(b)) => {
                     wrapped.push(b.let_at);
-                    if let Some((first, end)) = b.element {
-                        let start = toks[first].start;
-                        edits.push((start, start, "crate::ja_tip::both(|| ".to_owned()));
-                        let after = toks[end - 1].end;
-                        edits.push((after, after, ")".to_owned()));
-                        continue;
+                    match b.made_twice {
+                        MadeTwice::Element { first, end } => {
+                            edits.push(Edit::insert(toks[first].start, "crate::ja_tip::both(|| "));
+                            edits.push(Edit::insert(toks[end - 1].end, ")"));
+                        }
+                        MadeTwice::Value { eq, semi, pair } => {
+                            edits.push(Edit::insert(toks[eq].end, " crate::ja_tip::both(||"));
+                            let close = match pair {
+                                None => ")",
+                                Some(PairSide::First) => ").first_is_tooltip()",
+                                Some(PairSide::Second) => ").second_is_tooltip()",
+                            };
+                            edits.push(Edit::insert(toks[semi].start, close));
+                        }
                     }
-                    let after = toks[b.eq].end;
-                    edits.push((after, after, " crate::ja_tip::both(||".to_owned()));
-                    let end = toks[b.semi].start;
-                    let split = match b.position {
-                        None => ")".to_owned(),
-                        Some(k) => format!(").split_{k}()"),
-                    };
-                    edits.push((end, end, split));
                 }
                 Err((let_at, why)) => notes.push(Note {
                     line,
@@ -849,29 +1048,16 @@ impl Sinks {
         while k > 0 {
             k -= 1;
             lowest = lowest.min(depth[k]);
-            let t = &toks[k];
-            if t.is_ident(text, "fn") {
-                return Ok(None);
-            }
-            let after_let = |j: usize| j > 0 && toks[j - 1].is_ident(text, "let");
-            let in_let =
-                after_let(k) || (k > 0 && toks[k - 1].is_ident(text, "mut") && after_let(k - 1));
-            if t.is_ident(text, name)
-                && toks.get(k + 1).is_some_and(|n| n.is_punct(text, ":"))
-                && !in_let
+            if toks[k].is_ident(text, "fn")
+                || is_parameter(text, toks, k, name)
+                || is_handed_on(text, toks, depth, k, lowest, name)
             {
                 return Ok(None);
             }
-            if t.is_ident(text, name)
-                && ((closure_param(text, toks, k) && depth[k] <= lowest)
-                    || (taken_out(text, toks, k) && depth[k] <= lowest + 1))
-            {
-                return Ok(None);
-            }
-            if !t.is_ident(text, "let") || depth[k] > lowest {
+            if !toks[k].is_ident(text, "let") || depth[k] > lowest {
                 continue;
             }
-            let Some((position, eq)) = pattern(text, toks, k, name) else {
+            let Some((tuple, eq)) = pattern(text, toks, k, name) else {
                 continue;
             };
             let semi = (eq + 1..toks.len())
@@ -882,15 +1068,11 @@ impl Sinks {
                         format!("ツールチップの `{name}` の let の終わりが見つからない"),
                     )
                 })?;
-            let init = &toks[eq + 1..semi];
-            if init
-                .iter()
-                .all(|t| t.kind == Kind::Ident || t.is_punct(text, ".") || t.is_punct(text, "::"))
-            {
+            if is_alias(text, &toks[eq + 1..semi]) {
                 return Ok(None);
             }
             if let Some(colon) = (k + 1..eq).find(|&j| toks[j].is_punct(text, ":")) {
-                let ty = match position {
+                let ty = match tuple {
                     Some((place, _)) => tuple_items(text, toks, colon + 1, eq).get(place).copied(),
                     None => Some((colon + 1, eq)),
                 };
@@ -904,13 +1086,11 @@ impl Sinks {
                     ),
                 ));
             }
-            let (position, element) = match position {
+            let made_twice = match tuple {
                 Some((place, size)) if size > 2 => {
-                    match tuple_items(text, toks, eq + 1, semi).get(place) {
-                        Some(&item) if tuple_items(text, toks, eq + 1, semi).len() == size => {
-                            (None, Some(item))
-                        }
-                        _ => {
+                    match long_tuple_element(text, toks, eq, semi, place, size) {
+                        Some((first, end)) => MadeTwice::Element { first, end },
+                        None => {
                             return Err((
                                 k,
                                 format!(
@@ -920,7 +1100,21 @@ impl Sinks {
                         }
                     }
                 }
-                other => (other.map(|(place, _)| place), None),
+                Some((0, _)) => MadeTwice::Value {
+                    eq,
+                    semi,
+                    pair: Some(PairSide::First),
+                },
+                Some(_) => MadeTwice::Value {
+                    eq,
+                    semi,
+                    pair: Some(PairSide::Second),
+                },
+                None => MadeTwice::Value {
+                    eq,
+                    semi,
+                    pair: None,
+                },
             };
             let jumps = ["return", "break", "continue", "await"];
             if toks[eq + 1..semi]
@@ -961,13 +1155,52 @@ impl Sinks {
             }
             return Ok(Some(Binding {
                 let_at: k,
-                eq,
-                semi,
-                position,
-                element,
+                made_twice,
             }));
         }
         Ok(None)
+    }
+}
+
+fn is_parameter(text: &str, toks: &[Tok], k: usize, name: &str) -> bool {
+    let after_let = |j: usize| j > 0 && toks[j - 1].is_ident(text, "let");
+    let in_let = after_let(k) || (k > 0 && toks[k - 1].is_ident(text, "mut") && after_let(k - 1));
+    toks[k].is_ident(text, name)
+        && toks.get(k + 1).is_some_and(|n| n.is_punct(text, ":"))
+        && !in_let
+}
+
+fn is_handed_on(
+    text: &str,
+    toks: &[Tok],
+    depth: &[usize],
+    k: usize,
+    lowest: usize,
+    name: &str,
+) -> bool {
+    toks[k].is_ident(text, name)
+        && ((closure_param(text, toks, k) && depth[k] <= lowest)
+            || (taken_out(text, toks, k) && depth[k] <= lowest + 1))
+}
+
+fn is_alias(text: &str, init: &[Tok]) -> bool {
+    init.iter()
+        .all(|t| t.kind == Kind::Ident || t.is_punct(text, ".") || t.is_punct(text, "::"))
+}
+
+fn long_tuple_element(
+    text: &str,
+    toks: &[Tok],
+    eq: usize,
+    semi: usize,
+    place: usize,
+    size: usize,
+) -> Option<(usize, usize)> {
+    let items = tuple_items(text, toks, eq + 1, semi);
+    if items.len() == size {
+        items.get(place).copied()
+    } else {
+        None
     }
 }
 
@@ -979,10 +1212,24 @@ struct Note {
 
 struct Binding {
     let_at: usize,
-    eq: usize,
-    semi: usize,
-    position: Option<usize>,
-    element: Option<(usize, usize)>,
+    made_twice: MadeTwice,
+}
+
+enum MadeTwice {
+    Value {
+        eq: usize,
+        semi: usize,
+        pair: Option<PairSide>,
+    },
+    Element {
+        first: usize,
+        end: usize,
+    },
+}
+
+enum PairSide {
+    First,
+    Second,
 }
 
 fn pattern(
@@ -1148,7 +1395,11 @@ fn include_paths(text: &str, toks: &[Tok], path: &Path, edits: &mut Vec<Edit>) {
             };
             if !Path::new(inner).is_absolute() {
                 let abs = clean(&dir.join(inner)).display().to_string();
-                edits.push((toks[i + 3].start, toks[i + 3].end, format!("{abs:?}")));
+                edits.push(Edit::replace(
+                    toks[i + 3].start,
+                    toks[i + 3].end,
+                    format!("{abs:?}"),
+                ));
             }
         }
     }
@@ -1269,8 +1520,7 @@ fn main_call(text: &str, toks: &[Tok], call: &str, edits: &mut Vec<Edit>) -> boo
             && toks[i + 3].kind == Kind::Close(')')
             && toks[i + 4].kind == Kind::Open('{')
         {
-            let at = toks[i + 4].end;
-            edits.push((at, at, format!(" {call}")));
+            edits.push(Edit::insert(toks[i + 4].end, format!(" {call}")));
             return true;
         }
         match toks[i].kind {
@@ -1282,17 +1532,24 @@ fn main_call(text: &str, toks: &[Tok], call: &str, edits: &mut Vec<Edit>) -> boo
     false
 }
 
-fn apply(text: &str, mut edits: Vec<Edit>) -> String {
-    edits.sort_by_key(|e| (e.0, e.1 != e.0, e.1));
+fn apply(file: &str, text: &str, mut edits: Vec<Edit>, errors: &mut Vec<String>) -> String {
+    edits.sort_by_key(|e| (e.start(), matches!(e, Edit::Replace { .. }), e.end()));
     let mut out = String::with_capacity(text.len() + edits.len() * 40);
     let mut at = 0;
-    for (s, e, with) in edits {
-        if s < at {
+    for edit in &edits {
+        if edit.start() < at {
+            let before = &text[..edit.start()];
+            let line = before.matches('\n').count() + 1;
+            let column = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+            errors.push(format!(
+                "{file}:{line}:{column}: 写しの差し替え `{}` が、前の差し替えと重なる(desktop/ja/mirror.rs の誤り)",
+                edit.new_text()
+            ));
             continue;
         }
-        out.push_str(&text[at..s]);
-        out.push_str(&with);
-        at = e;
+        out.push_str(&text[at..edit.start()]);
+        out.push_str(edit.new_text());
+        at = edit.end();
     }
     out.push_str(&text[at..]);
     out
@@ -1571,9 +1828,14 @@ fn raw_string(b: &[u8], i: usize) -> Option<usize> {
 }
 
 pub struct Context {
-    pub ui: bool,
-    pub keep: Option<String>,
+    pub treatment: Treatment,
     pub format_head: Option<(usize, usize)>,
+}
+
+pub enum Treatment {
+    LeaveSilently,
+    KeepEnglish { why: String },
+    MayTranslate,
 }
 
 fn in_pattern(text: &str, toks: &[Tok], i: usize) -> bool {
@@ -1775,25 +2037,29 @@ impl Walk {
         let compared = matches!(prev, "==" | "!=")
             || matches!(next, "==" | "!=" | "=>" | "|")
             || in_pattern(text, toks, i);
-        let ui = !in_skip && self.const_depth.is_none() && !compared;
+        let left_silently = in_skip || self.const_depth.is_some() || compared;
         let call = self
             .frames
             .iter()
             .rev()
             .find(|f| f.open == '(' || f.is_macro);
-        let keep = if self.frames.last().is_some_and(|f| f.index) {
+        let kept_because = if self.frames.last().is_some_and(|f| f.index) {
             Some("index".to_owned())
         } else {
             call.and_then(|f| f.callee.clone())
                 .filter(|c| KEEP.contains(&c.as_str()))
+        };
+        let treatment = match kept_because {
+            _ if left_silently => Treatment::LeaveSilently,
+            Some(why) => Treatment::KeepEnglish { why },
+            None => Treatment::MayTranslate,
         };
         let format_head = self.frames.last().and_then(|f| {
             (f.is_macro && f.callee.as_deref() == Some("format") && f.arg == 0)
                 .then_some((f.macro_start, f.open_end))
         });
         Context {
-            ui,
-            keep,
+            treatment,
             format_head,
         }
     }
@@ -1823,11 +2089,11 @@ mod tests {
         std::fs::write(dir.join("tables/a.txt"), table).unwrap();
         let report = mirror(&Crate {
             dir: dir.clone(),
-            root: "src/lib.rs",
-            stub: "ja/lib.rs",
+            source_root: "src/lib.rs",
+            cargo_root: "ja/lib.rs",
             tables: dir.join("tables"),
             side,
-            first: None,
+            first_line_prefix: String::new(),
             extra: vec![],
             main_call: None,
             out: dir.join("out"),
@@ -1922,11 +2188,11 @@ mod tests {
     fn new_words_lowercase_words_and_gone_words_are_reported() {
         let c = copy(
             "fn f(e: E) -> E { e.child(\"Brand new words\").child(\"added\").tip(\"A new tooltip\").id(\"header-title\").child(\"threadId\").child(\"Skipped words\") }\n",
-            "\"Not there any more\" = \"もう無い\"\nskip \"Skipped words\"\nskip \"Gone too\"\n",
+            "\"Not there any more\" = \"もう無い\"\nskip \"Skipped words\"  # 鍵\nskip \"Gone too\"  # 鍵\n",
         );
-        let missing: Vec<&str> = c.report.missing.iter().map(|m| m.2.as_str()).collect();
+        let missing: Vec<&str> = c.report.missing.iter().map(|m| m.en.as_str()).collect();
         assert_eq!(missing, ["Brand new words", "added", "A new tooltip"]);
-        let stale: Vec<&str> = c.report.stale.iter().map(|s| s.1.as_str()).collect();
+        let stale: Vec<&str> = c.report.stale.iter().map(|s| s.entry.as_str()).collect();
         assert_eq!(stale, ["Not there any more", "skip Gone too"]);
     }
 
@@ -1949,15 +2215,89 @@ mod tests {
     }
 
     #[test]
+    fn a_replace_can_name_which_of_a_known_number_of_matches() {
+        let src = "fn f() { a(); a(); b(); }\n";
+        let second = copy(src, "replace 2 of 2: a();\nwith: d();\n");
+        assert!(
+            second.report.errors.is_empty(),
+            "{:?}",
+            second.report.errors
+        );
+        assert!(second.text.contains("a(); d(); b();"), "{}", second.text);
+        let first = copy(src, "replace 1 of 2: a();\nwith: d();\n");
+        assert!(first.text.contains("d(); a(); b();"), "{}", first.text);
+        let more = copy(src, "\nreplace 1 of 3: a();\nwith: d();\n");
+        assert_eq!(more.report.errors.len(), 1, "{:?}", more.report.errors);
+        assert!(more.report.errors[0].contains("tables/a.txt:2"));
+        assert!(more.report.errors[0].contains("2 か所"));
+        assert!(parse_table("t", "replace 3 of 2: a();\nwith: d();\n").is_err());
+        assert!(parse_table("t", "replace 0 of 2: a();\nwith: d();\n").is_err());
+        assert!(parse_table("t", "replace 1 of 1: a();\nwith: d();\n").is_err());
+    }
+
+    #[test]
+    fn a_skip_without_a_reason_stops_the_build_at_its_line() {
+        let src = "fn f(e: E) -> E { e.child(\"Some words\") }\n";
+        let bare = copy(src, "# 頭\nskip \"Some words\"\n");
+        assert_eq!(bare.report.errors.len(), 1, "{:?}", bare.report.errors);
+        assert!(
+            bare.report.errors[0].contains("tables/a.txt:2"),
+            "{:?}",
+            bare.report.errors
+        );
+        let blank = copy(src, "skip \"Some words\"  #  \n");
+        assert_eq!(blank.report.errors.len(), 1, "{:?}", blank.report.errors);
+        assert!(blank.report.errors[0].contains("tables/a.txt:1"));
+        let given = copy(src, "skip \"Some words\"  # 鍵\n");
+        assert!(given.report.errors.is_empty(), "{:?}", given.report.errors);
+        assert!(given.report.missing.is_empty());
+    }
+
+    #[test]
+    fn overlapping_edits_stop_the_build_at_their_place() {
+        let text = "ab\ncdef\n";
+        let mut errors = Vec::new();
+        apply(
+            "src/a.rs",
+            text,
+            vec![
+                Edit::replace(3, 6, "X"),
+                Edit::replace(4, 5, "Y"),
+                Edit::insert(5, "Z"),
+            ],
+            &mut errors,
+        );
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(
+            errors.iter().all(|e| e.contains("src/a.rs:2")),
+            "{errors:?}"
+        );
+        let mut errors = Vec::new();
+        let out = apply(
+            "src/a.rs",
+            text,
+            vec![
+                Edit::insert(5, ">"),
+                Edit::replace(3, 5, "X"),
+                Edit::insert(3, "<"),
+                Edit::insert(5, "!"),
+            ],
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(out, "ab\n<X>!ef\n");
+    }
+
+    #[test]
     fn a_copy_that_cant_be_written_stops_the_build() {
         let mut m = Mirror {
             c: &Crate {
                 dir: PathBuf::new(),
-                root: "src/lib.rs",
-                stub: "ja/lib.rs",
+                source_root: "src/lib.rs",
+                cargo_root: "ja/lib.rs",
                 tables: PathBuf::new(),
                 side: Side::Core,
-                first: None,
+                first_line_prefix: String::new(),
                 extra: vec![],
                 main_call: None,
                 out: PathBuf::new(),
@@ -2007,7 +2347,17 @@ mod tests {
             "{}",
             c.text
         );
-        assert!(c.text.contains(").split_1();"), "{}", c.text);
+        assert!(c.text.contains(").second_is_tooltip();"), "{}", c.text);
+        let first = copy_as(
+            Side::Gpui,
+            &src.replace("let (text, tip)", "let (tip, text)"),
+            "tip-macro: tipped! 2\n\"A {x}\" = \"甲 {x}\"\n\"B {x}\" = \"乙 {x}\"\n",
+        );
+        assert!(
+            first.text.contains(").first_is_tooltip();"),
+            "{}",
+            first.text
+        );
     }
 
     #[test]
@@ -2020,8 +2370,8 @@ mod tests {
         );
         assert!(!c.text.contains("crate::ja_tip::both"), "{}", c.text);
         assert_eq!(c.report.notes.len(), 2, "{:?}", c.report.notes);
-        assert!(c.report.notes[0].2.contains("ほかにも使われる"));
-        assert!(c.report.notes[1].2.contains("途中で抜ける"));
+        assert!(c.report.notes[0].why.contains("ほかにも使われる"));
+        assert!(c.report.notes[1].why.contains("途中で抜ける"));
     }
 
     #[test]
@@ -2061,7 +2411,7 @@ mod tests {
         assert!(!c.text.contains("crate::ja_tip::both"), "{}", c.text);
         assert_eq!(c.report.notes.len(), 2, "{:?}", c.report.notes);
         assert!(
-            c.report.notes.iter().all(|n| n.2.contains("型がある")),
+            c.report.notes.iter().all(|n| n.why.contains("型がある")),
             "{:?}",
             c.report.notes
         );
@@ -2075,7 +2425,7 @@ mod tests {
             src,
             "tip-method: tip\n\"In {p}\" = \"{p} の中\"\n",
         );
-        let lines: Vec<usize> = c.report.notes.iter().map(|n| n.1).collect();
+        let lines: Vec<usize> = c.report.notes.iter().map(|n| n.line).collect();
         assert_eq!(lines, [3], "{:?}", c.report.notes);
     }
 
@@ -2094,7 +2444,7 @@ mod tests {
         let c = copy_as(Side::Gpui, src, table);
         assert_eq!(c.report.notes.len(), 1, "{:?}", c.report.notes);
         assert!(
-            c.report.notes[0].2.contains("3 つ以上"),
+            c.report.notes[0].why.contains("3 つ以上"),
             "{:?}",
             c.report.notes
         );

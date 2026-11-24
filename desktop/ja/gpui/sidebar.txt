@@ -16,7 +16,7 @@ with: a.tip(t)
 replace: tip: impl Into<SharedString>,
 with: tip: impl Into<SharedString> + AsRef<str>,
 replace: let (hover, pressed, secondary, fg) = (p.icon_hover, p.icon_pressed, p.secondary, p.fg);
-with: let tip = crate::ja_tip::keep(tip); let (hover, pressed, secondary, fg) = (p.icon_hover, p.icon_pressed, p.secondary, p.fg);
+with: let tip = crate::ja_tip::to_table_english(tip); let (hover, pressed, secondary, fg) = (p.icon_hover, p.icon_pressed, p.secondary, p.fg);
 
 replace: let title = if t.title.is_empty() {
 with: let ja_make_title = || if t.title.is_empty() {

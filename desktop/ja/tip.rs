@@ -129,7 +129,7 @@ impl<A, B> Both<(A, B)> {
         dead_code,
         reason = "used only while a copied file has such a pair; gpui allows dead code outside the automation build"
     )]
-    pub(crate) fn split_0(self) -> (Both<A>, B) {
+    pub(crate) fn first_is_tooltip(self) -> (Both<A>, B) {
         let (en, other_en) = self.en;
         match self.ja {
             Some((ja_words, other)) => (
@@ -143,7 +143,7 @@ impl<A, B> Both<(A, B)> {
         }
     }
 
-    pub(crate) fn split_1(self) -> (A, Both<B>) {
+    pub(crate) fn second_is_tooltip(self) -> (A, Both<B>) {
         let (other_en, en) = self.en;
         match self.ja {
             Some((other, ja_words)) => (
@@ -158,7 +158,7 @@ impl<A, B> Both<(A, B)> {
     }
 }
 
-pub(crate) fn keep<T: Into<SharedString> + AsRef<str>>(text: T) -> SharedString {
+pub(crate) fn to_table_english<T: Into<SharedString> + AsRef<str>>(text: T) -> SharedString {
     if !ja::screen_is_japanese() {
         return text.into();
     }
@@ -232,7 +232,7 @@ mod tests {
             ("Updates", "Updates")
         );
         assert_eq!(
-            pair(&keep(runner.as_str()).into_faces()),
+            pair(&to_table_english(runner.as_str()).into_faces()),
             ("Updates", "Updates")
         );
         assert_eq!(shown_str("Updates"), "Updates");
@@ -245,7 +245,7 @@ mod tests {
         let handed: &'static str = ja::t(updates);
         assert_eq!(handed, "更新");
         assert_eq!(pair(&faces(|| handed)), ("Updates", "更新"));
-        let kept = keep(handed);
+        let kept = to_table_english(handed);
         assert_eq!(kept.as_str(), "Updates");
         assert_eq!(pair(&Faces::of_shared(kept.clone())), ("Updates", "更新"));
         assert_eq!(
@@ -262,7 +262,10 @@ mod tests {
         let updates = row("Updates");
         let tip = both(|| format!("{}!", ja::t(updates)));
         assert_eq!(pair(&faces(|| tip.clone())), ("Updates!", "更新!"));
-        let (text, tip) = both(|| (ja::t(updates), ja::t(updates))).split_1();
+        let (text, tip) = both(|| (ja::t(updates), ja::t(updates))).second_is_tooltip();
+        assert_eq!(text, "更新");
+        assert_eq!(pair(&tip.into_faces()), ("Updates", "更新"));
+        let (tip, text) = both(|| (ja::t(updates), ja::t(updates))).first_is_tooltip();
         assert_eq!(text, "更新");
         assert_eq!(pair(&tip.into_faces()), ("Updates", "更新"));
     }
@@ -272,7 +275,7 @@ mod tests {
         let updates = row("Updates");
         assert_eq!(pair(&faces(|| ja::t(updates))), ("Updates", "Updates"));
         assert_eq!(
-            pair(&keep(ja::t(updates)).into_faces()),
+            pair(&to_table_english(ja::t(updates)).into_faces()),
             ("Updates", "Updates")
         );
         assert_eq!(shown_str(updates.0), "Updates");

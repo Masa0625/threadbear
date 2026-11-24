@@ -4,9 +4,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static JAPANESE: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
-    static ENGLISH: Cell<u32> = const { Cell::new(0) };
-    static HERE: Cell<Option<bool>> = const { Cell::new(None) };
-    static MADE: RefCell<Vec<(&'static str, String, String)>> = const { RefCell::new(Vec::new()) };
+    static ENGLISH_DEPTH: Cell<u32> = const { Cell::new(0) };
+    static THIS_THREAD_JAPANESE: Cell<Option<bool>> = const { Cell::new(None) };
+    static MADE: RefCell<Vec<MadeAnswer>> = const { RefCell::new(Vec::new()) };
+}
+
+struct MadeAnswer {
+    producer: &'static str,
+    english: String,
+    japanese: String,
 }
 
 include!(concat!(env!("OUT_DIR"), "/ja/table.rs"));
@@ -19,18 +25,19 @@ pub fn set_japanese(on: bool) {
 /// which share one process.
 #[doc(hidden)]
 pub fn set_here(japanese: Option<bool>) {
-    HERE.with(|h| h.set(japanese));
+    THIS_THREAD_JAPANESE.with(|j| j.set(japanese));
 }
 
 /// Whether the words made now are Japanese.
 pub fn on() -> bool {
-    ENGLISH.with(Cell::get) == 0 && screen_is_japanese()
+    ENGLISH_DEPTH.with(Cell::get) == 0 && screen_is_japanese()
 }
 
 /// Whether the screen is Japanese, even inside `english` (where the words
 /// made are English, but table words handed in from outside may not be).
 pub fn screen_is_japanese() -> bool {
-    HERE.with(Cell::get)
+    THIS_THREAD_JAPANESE
+        .with(Cell::get)
         .unwrap_or_else(|| JAPANESE.load(Ordering::Relaxed))
 }
 
@@ -39,10 +46,10 @@ pub fn english<T>(make: impl FnOnce() -> T) -> T {
     struct Leave;
     impl Drop for Leave {
         fn drop(&mut self) {
-            ENGLISH.with(|e| e.set(e.get().saturating_sub(1)));
+            ENGLISH_DEPTH.with(|e| e.set(e.get().saturating_sub(1)));
         }
     }
-    ENGLISH.with(|e| e.set(e.get() + 1));
+    ENGLISH_DEPTH.with(|e| e.set(e.get() + 1));
     let _leave = Leave;
     make()
 }
@@ -81,9 +88,13 @@ pub fn made(producer: &'static str, make: impl Fn() -> String) -> String {
     let ja = make();
     MADE.with(|m| {
         let mut m = m.borrow_mut();
-        m.retain(|(p, _, _)| *p != producer);
+        m.retain(|answer| answer.producer != producer);
         if ja != en {
-            m.push((producer, en.clone(), ja));
+            m.push(MadeAnswer {
+                producer,
+                english: en.clone(),
+                japanese: ja,
+            });
         }
     });
     en
@@ -99,8 +110,8 @@ pub fn made_shown(name: &str) -> Option<String> {
     MADE.with(|m| {
         m.borrow()
             .iter()
-            .find(|(_, en, _)| en == name)
-            .map(|(_, _, ja)| ja.clone())
+            .find(|answer| answer.english == name)
+            .map(|answer| answer.japanese.clone())
     })
 }
 

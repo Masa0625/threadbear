@@ -3,9 +3,7 @@
 # 英語の題(ja_named)と同じ項目だけを書き換える(desktop/ja/menu.rs)。
 replace: cx.set_menus(gpui_menus(&menus));
 with: let ja_named = threadbear_core::ja::english(|| self.menu_model(cx)); cx.set_menus(gpui_menus(&ja_named));
-replace: fn tb_menu_icons();
-with: fn tb_menu_icons( );
-replace: tb_menu_icons();
+replace 2 of 2: tb_menu_icons();
 with: tb_menu_icons(); if threadbear_core::ja::on() { ja_retitle_menus(&ja_named, &menus) }
 replace: fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
 with: #[cfg(target_os = "macos")] fn ja_retitle_menus(en: &[TopMenu], ja: &[TopMenu]) { use crate::ja_menu::Place; struct Native(objc2::rc::Retained<objc2_app_kit::NSMenu>); impl crate::ja_menu::Menu for Native { fn item(&self, at: usize) -> Option<(String, Option<Native>)> { let item = self.0.itemAtIndex(isize::try_from(at).ok()?)?; Some((item.title().to_string(), item.submenu().map(Native))) } fn set_title(&self, at: usize, title: &str) { if let Some(item) = isize::try_from(at).ok().and_then(|at| self.0.itemAtIndex(at)) { item.setTitle(&objc2_foundation::NSString::from_str(title)) } } } fn places<'a>(en: &'a [MenuEntry], ja: &'a [MenuEntry]) -> Vec<Place<'a>> { en.iter().zip(ja).map(|pair| match pair { (MenuEntry::Item { title: en, .. }, MenuEntry::Item { title: ja, .. }) => Place::Titled { en: en.as_str(), ja: ja.as_str(), items: Vec::new() }, (MenuEntry::Submenu { title: en, items: en_items }, MenuEntry::Submenu { title: ja, items: ja_items }) => Place::Titled { en: en.as_str(), ja: ja.as_str(), items: places(en_items, ja_items) }, _ => Place::Kept }).collect() } let Some(bar) = objc2::MainThreadMarker::new().and_then(|mtm| objc2_app_kit::NSApplication::sharedApplication(mtm).mainMenu()) else { return }; let tops: Vec<Place> = en.iter().zip(ja).map(|(en, ja)| Place::Titled { en: en.title.as_str(), ja: ja.title.as_str(), items: places(&en.items, &ja.items) }).collect(); crate::ja_menu::retitle(&Native(bar), &tops) } fn ja_core_word(en: &'static str) -> &'static str { threadbear_core::ja::TABLE.iter().find(|e| e.0 == en).map_or(en, threadbear_core::ja::t) } fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {

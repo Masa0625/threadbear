@@ -1,11 +1,11 @@
 tip-method: tip
 
 replace: .aria_label(SharedString::from(title.to_owned()))
-with: .aria_label(crate::ja_tip::keep(title))
+with: .aria_label(crate::ja_tip::to_table_english(title))
 replace: .aria_label(SharedString::from(toggle_title.to_owned()))
-with: .aria_label(crate::ja_tip::keep(toggle_title))
+with: .aria_label(crate::ja_tip::to_table_english(toggle_title))
 replace: .aria_label(SharedString::from(threadbear_core::ja::t(
-with: .aria_label(crate::ja_tip::keep(threadbear_core::ja::t(
+with: .aria_label(crate::ja_tip::to_table_english(threadbear_core::ja::t(
 replace: let allow_words =
 with: let allow_words_make = ||
 replace: "Allow {count}");
