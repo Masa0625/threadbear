@@ -9,7 +9,7 @@ default-run = "threadbear-gpui"
 
 [[bin]]
 name = "threadbear-gpui"
-path = "src/main.rs"
+path = "ja/main.rs"
 
 # The processes Chromium starts (src/web_helper.rs), built with the app so the
 # two always match. desktop/scripts/install-app.sh puts it beside the app.

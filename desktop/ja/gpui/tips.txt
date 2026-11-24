@@ -1,0 +1,4 @@
+# gpui/src/tips.rs: ツールチップを描く所。文は記録(activity.rs)と自動操作
+# (automation.rs の名前探し)に英語のまま渡り、ここで描く時だけ日本語にする。
+replace: Tooltip::new(shown.clone())
+with: Tooltip::new(threadbear_core::ja::draw(&shown, crate::ja_table::ENTRIES).into_owned())

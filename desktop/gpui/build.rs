@@ -6,7 +6,10 @@
     clippy::expect_used,
     reason = "a build script: a panic stops the build with its message, which is what's wanted"
 )]
+#[path = "../ja/mirror.rs"]
+mod ja;
 fn main() {
+    ja::gpui();
     println!("cargo:rerun-if-changed=native/media_views.m");
     println!("cargo:rerun-if-changed=native/menu_icons.m");
     println!("cargo:rerun-if-changed=native/file_icons.m");
