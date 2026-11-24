@@ -15,7 +15,7 @@
 ## 仕組み
 
 - `gpui/Cargo.toml` の `[[bin]] path` と `core/Cargo.toml` の `[lib] path` が、`gpui/ja/main.rs`・`core/ja/lib.rs` を指す。どちらも写しを `include!` で取り込むだけのファイル。cargo fmt は、そこの `#[cfg(any())] mod` から元の `src/` を整える。
-- `gpui/build.rs`(2 行足した)と `core/build.rs`(新しい)が `mirror.rs` を呼ぶ。写しの根は、各 `mod x;` に元のファイルの絶対パスを `#[path]` で付けた物。表のあるファイルと、子のフォルダを持つファイルだけを `$OUT_DIR/ja/` に写す。差し替えは行の中だけで、行の数は変えない(コンパイラの指す n 行目は元の n 行目)。
+- `gpui/build.rs`(Windows の段と macOS の段の間に 4 行足した。Mike がよく触る `fn main` の頭を避けた)と `core/build.rs`(新しい)が `mirror.rs` を呼ぶ。写しの根は、各 `mod x;` に元のファイルの絶対パスを `#[path]` で付けた物。表のあるファイルと、子のフォルダを持つファイルだけを `$OUT_DIR/ja/` に写す。差し替えは行の中だけで、行の数は変えない(コンパイラの指す n 行目は元の n 行目)。
 - 表は `ja/<crate>/<src の下のパス>.txt`。例: `ja/gpui/header.txt` は `gpui/src/header.rs` の表。
   - `"English" = "日本語"`: その literal を `threadbear_core::ja::t("English", "日本語")` に、`format!("English {x}", …)` を `ja_format!("日本語 {x}", "English {x}", …)` に差し替える。
   - `tip "English" = "日本語"`: 呼ぶ所では英語のまま。ツールチップを描く時に `ja::draw` が訳す(`{…}` を埋めた文と、行ごとの文も引ける)。ツールチップの文は活動の記録と自動操作の名前を兼ねるので、英語で渡す。
