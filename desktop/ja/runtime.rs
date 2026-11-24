@@ -136,11 +136,13 @@ fn fill(en: &str, ja: &str, text: &str) -> Option<String> {
                 // 次の文字の部分まで。最後なら残り全部。
                 let until = match en.get(i + 1) {
                     Some(Piece::Text(t)) if !t.is_empty() && i + 2 < en.len() => rest.find(t.as_str())?,
-                    Some(Piece::Text(t)) if !t.is_empty() => rest.len().checked_sub(t.len()).filter(|&n| rest[n..] == **t)?,
+                    Some(Piece::Text(t)) if !t.is_empty() => rest.strip_suffix(t.as_str())?.len(),
                     _ => rest.len(),
                 };
-                got.push((key.clone(), rest[..until].to_owned()));
-                rest = &rest[until..];
+                // until は find・strip_suffix・len から来るので、文字の境目にある。
+                let (value, after) = (rest.get(..until)?, rest.get(until..)?);
+                got.push((key.clone(), value.to_owned()));
+                rest = after;
             }
         }
         i += 1;
@@ -191,5 +193,17 @@ mod tests {
         assert_eq!(ja("Updates\nCopy link"), "更新\nリンクをコピー");
         assert_eq!(ja("Something else"), "Something else");
         assert_eq!(ja("In "), "In ");
+    }
+
+    // 埋める所に多バイトの文字が来ても、文字の途中で切らない。
+    #[test]
+    fn a_tooltip_with_japanese_in_its_holes_does_not_panic() {
+        let entries = [("Open {title} now", "今 {title} を開く"), ("Saved in {}.", "{} に保存した。")];
+        let ja = |text| draw_in(true, text, &entries).into_owned();
+        assert_eq!(ja("Open 受信箱 now"), "今 受信箱 を開く");
+        assert_eq!(ja("Saved in 書類."), "書類 に保存した。");
+        assert_eq!(ja("Saved in 書類"), "Saved in 書類");
+        assert_eq!(ja("Open 日本語"), "Open 日本語");
+        assert_eq!(ja("日本語 now"), "日本語 now");
     }
 }

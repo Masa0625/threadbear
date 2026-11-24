@@ -1,0 +1,116 @@
+# gpui/src/header.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
+# 左はソースの literal の中身をそのまま(エスケープも)。右に {名前} や {} を同じに書く。
+# tip の行は、ツールチップに流れる文。呼ぶ所では英語のまま(記録と自動操作の名前)、
+# 描く時だけ日本語にする。
+
+# 題と見出しの並び
+"Untitled" = "無題"
+tip "Click to rename" = "クリックで名前を変える"
+"·  Archived" = "·  アーカイブ済み"
+tip "This turn started before the runner updated, so it runs on the previous version. The thread moves to the new one when the turn ends." = "このターンはランナーの更新前に始まったので、前の版で動いています。ターンが終わるとスレッドは新しい版に移ります。"
+"·  Finishing on the previous version" = "·  前の版で仕上げ中"
+tip "Works on its own branch in a worktree. tb land, or the Land chip, puts it on main in {}." = "worktree の自分の枝で作業します。tb land か Land のチップで、{} の main に入ります。"
+tip "Works on its own branch in a worktree." = "worktree の自分の枝で作業します。"
+"Scheduled" = "予定"
+
+# プロジェクトのチップとメニュー
+tip "In {}" = "{} の中"
+tip "The librarian put this thread in {title}. Right-click to keep it there or take it out. In {}" = "司書がこのスレッドを {title} に入れました。右クリックで、そこに残すか外せます。{} の中"
+tip "{title}, in {}. Click to open the project" = "{title}、{} の中。クリックでプロジェクトを開く"
+"Open {title}" = "{title} を開く"
+"Keep it in {title}" = "{title} に残す"
+"Take it out of {title}" = "{title} から外す"
+"Add to another project" = "別のプロジェクトに足す"
+tip "Return saves, Escape cancels" = "Return で保存、Escape で取り消し"
+"Thread title" = "スレッドの題"
+
+# 共有
+tip "Shared: anyone with the link can read it" = "共有中: リンクを知っている人は誰でも読めます"
+tip "Share this thread on the web" = "このスレッドを Web で共有する"
+tip "Only you" = "自分だけ"
+tip "Only you can read it" = "自分だけが読めます"
+tip "Anyone with the link" = "リンクを知っている人"
+tip "Anyone with the link can read it" = "リンクを知っている人は誰でも読めます"
+tip "Make a new link. The old one stops working." = "新しいリンクを作ります。古いリンクは使えなくなります。"
+tip "Open the shared page in your browser" = "共有のページをブラウザで開く"
+tip "Copy the link to paste anywhere" = "リンクをコピーして、どこにでも貼れるようにする"
+"Copy link" = "リンクをコピー"
+"Share this thread" = "このスレッドを共有"
+
+# その他のメニュー
+tip "More" = "その他"
+"Copy transcript as Markdown" = "会話を Markdown でコピー"
+"Copy thread id" = "スレッドの id をコピー"
+"Open on the web" = "Web で開く"
+"Sub-agent" = "サブエージェント"
+tip "Back to the thread" = "スレッドに戻る"
+
+# お知らせの帯
+tip "Hide this until it happens again" = "また起きるまで隠す"
+"Dismiss" = "閉じる"
+"Start runner" = "ランナーを始める"
+tip "Start the runner's background service" = "ランナーの裏で動くサービスを始める"
+"Try again" = "もう一度"
+tip "Try to reach the runner now rather than waiting" = "待たずに、今ランナーにつなぎ直す"
+tip "Hide this message" = "このお知らせを隠す"
+tip "Start a thread in Threadbear's own repo to find what caused this and fix it" = "Threadbear の repo でスレッドを始めて、原因を探して直す"
+"Investigate" = "調べる"
+
+# 上限
+"Every login in {} is out of room." = "{} のログインは、どれも上限に達しました。"
+"{name}'s plan has ended" = "{name} のプランが終わりました"
+"{name} has reached its limit" = "{name} は上限に達しました"
+", resets {}" = "。{} にリセット"
+"Continue now on {title}" = "今すぐ {title} で続ける"
+"Reset {name}'s limits" = "{name} の上限をリセットしました"
+"Codex says {name} has nothing to reset yet." = "Codex によると、{name} にはまだリセットする物がありません。"
+"{name} has no resets left." = "{name} にはリセットが残っていません。"
+"This Mac's runner is too old to use a reset. It updates by itself." = "この Mac のランナーは古く、リセットを使えません。ランナーはひとりでに更新されます。"
+"The runner didn't say what thread it made." = "ランナーが、作ったスレッドを知らせてきませんでした。"
+"This Mac's runner is too old for Find work for it. It updates by itself." = "この Mac のランナーは古く、「仕事を探す」を使えません。ランナーはひとりでに更新されます。"
+
+# サインイン
+"{login} is signed out." = "{login} はサインアウトしています。"
+tip "{login} was refused: signed out, or its sign-in ended. Sign in… opens its own sign-in" = "{login} が断られました。サインアウトしたか、サインインが切れています。「サインイン…」で、そのログインのサインインを開きます"
+tip "Sign in on {runner} itself" = "{runner} の上でサインインする"
+tip "Sign in on {runner} itself: {command} in its Terminal" = "{runner} の上でサインインする: そのターミナルで {command}"
+"{login} on {runner} is signed out." = "{runner} の {login} はサインアウトしています。"
+tip "Sign in using that login's CLI, then send your last message again" = "そのログインの CLI でサインインしてから、最後のメッセージをもう一度送る"
+tip "Opens Terminal on {name}'s own sign-in for this login" = "このログインの {name} のサインインを、ターミナルで開く"
+"Sign in…" = "サインイン…"
+tip "Send your last message again, once you've signed in" = "サインインしたら、最後のメッセージをもう一度送る"
+"Send again" = "もう一度送る"
+"Threadbear can't sign {id} in from here: run its CLI's sign-in in Terminal." = "Threadbear はここから {id} にサインインできません。ターミナルでその CLI のサインインを流してください。"
+"Couldn't open Terminal to sign in: {e}" = "サインインのためにターミナルを開けませんでした: {e}"
+"Threadbear can't make a token for {id} from here: run claude setup-token for it in Terminal." = "Threadbear はここから {id} のトークンを作れません。ターミナルで claude setup-token を流してください。"
+"Couldn't open Terminal to make a token: {e}" = "トークンを作るためにターミナルを開けませんでした: {e}"
+
+# 続けられなかった時
+tip "Move this thread to {title} on GPT-6.1-Sol and continue the task. Your draft stays in the box." = "このスレッドを {title} の GPT-6.1-Sol に移して、作業を続けます。書きかけの文は箱に残ります。"
+"Claude couldn't continue with this message." = "Claude はこのメッセージで続けられませんでした。"
+"Continuing…" = "続けています…"
+"Continue with Codex Sol" = "Codex Sol で続ける"
+"Codex Sol is no longer available. Choose a model to carry on." = "Codex Sol はもう使えません。続けるモデルを選んでください。"
+
+# 送れなかった時
+"Couldn't reach the runner." = "ランナーにつながりませんでした。"
+"Lost the connection to the runner." = "ランナーとのつながりが切れました。"
+"The runner didn't answer in time." = "ランナーが時間内に答えませんでした。"
+"this thread" = "このスレッド"
+"{what} Your message to {name} hasn't shown up there, so it's back in its box. It may still arrive: look before sending it again." = "{what} {name} へのメッセージがスレッドに出ていないので、箱に戻しました。まだ届くかもしれないので、送り直す前に確かめてください。"
+"{what} Your message to {name} wasn't sent. It's back in its box." = "{what} {name} へのメッセージは送られませんでした。箱に戻しました。"
+
+# アーカイブと受信箱の終わり
+tip "Open this thread" = "このスレッドを開く"
+"Archived" = "アーカイブ済み"
+tip "Put it back in the inbox" = "受信箱に戻す"
+"Undo" = "元に戻す"
+tip "Dismiss (⌘Z still brings it back)" = "閉じる(⌘Z でまだ戻せます)"
+"Inbox clear" = "受信箱は空です"
+"Nothing's waiting on you" = "待っている物はありません"
+"That's the end of the inbox" = "受信箱はここまでです"
+"You're all caught up" = "全部見終わりました"
+
+# 共有の選び(id と読み上げの名前を兼ねる label)を、描く所で訳す。
+replace: .child(label)
+with: .child(threadbear_core::ja::draw(label, crate::ja_table::ENTRIES).into_owned())

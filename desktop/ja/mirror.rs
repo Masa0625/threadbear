@@ -468,8 +468,9 @@ impl Mirror<'_> {
                 && toks[i + 2].kind == Kind::Open('(')
                 && toks[i + 3].kind == Kind::Str
             {
-                let lit = toks[i + 3].text(text);
-                let inner = &lit[1..lit.len() - 1];
+                let Some(inner) = quoted(toks[i + 3].text(text)) else {
+                    continue;
+                };
                 if !Path::new(inner).is_absolute() {
                     let abs = clean(&dir.join(inner)).display().to_string();
                     edits.push((toks[i + 3].start, toks[i + 3].end, format!("{abs:?}")));
@@ -488,10 +489,10 @@ impl Mirror<'_> {
                 continue;
             }
             let lit = t.text(text);
-            if !lit.starts_with('"') {
-                continue; // r"" b"" はここでは扱わない
-            }
-            let content = &lit[1..lit.len() - 1];
+            // r"" b"" と閉じていない物は扱わない。
+            let Some(content) = quoted(lit) else {
+                continue;
+            };
             let line = text[..t.start].matches('\n').count() + 1;
             let ctx = walk.context(text, toks, i);
             let Some(&ei) = index.get(content) else {
@@ -556,6 +557,11 @@ fn clean(p: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// `"…"` の literal の中身。r"" b"" と閉じていない物は None。
+fn quoted(lit: &str) -> Option<&str> {
+    lit.strip_prefix('"')?.strip_suffix('"')
 }
 
 fn file_name(rel: &str) -> &str {
@@ -631,9 +637,8 @@ fn path_attribute(text: &str, toks: &[Tok], start: usize) -> Option<((usize, usi
             return None;
         }
         if toks.get(j + 1).is_some_and(|t| t.is_ident(text, "path")) && toks.get(j + 3).is_some_and(|t| t.kind == Kind::Str) {
-            let lit = &toks[j + 3];
-            let s = lit.text(text);
-            return Some(((toks[j - 1].start, toks[end - 1].end), s[1..s.len() - 1].to_owned()));
+            let inner = quoted(toks[j + 3].text(text))?;
+            return Some(((toks[j - 1].start, toks[end - 1].end), inner.to_owned()));
         }
         end = j - 1;
     }
@@ -687,8 +692,15 @@ fn blank_inner_attributes(text: &str) -> (String, Vec<String>) {
     let mut out: Vec<u8> = text.as_bytes().to_vec();
     let mut attrs = Vec::new();
     let mut i = 0;
+    // 一番外の物だけ(中の `mod x { #![…] }` は残す)。
+    let mut outer = 0i32;
     while i + 2 < toks.len() {
-        if toks[i].is_punct(text, "#") && toks[i + 1].is_punct(text, "!") && toks[i + 2].kind == Kind::Open('[') {
+        match toks[i].kind {
+            Kind::Open(_) => outer += 1,
+            Kind::Close(_) => outer -= 1,
+            _ => {}
+        }
+        if outer == 0 && toks[i].is_punct(text, "#") && toks[i + 1].is_punct(text, "!") && toks[i + 2].kind == Kind::Open('[') {
             let mut depth = 0;
             let mut j = i + 2;
             while j < toks.len() {
@@ -738,7 +750,7 @@ fn squash(s: &str) -> String {
 fn looks_like_ui(content: &str) -> bool {
     let starts_upper = content.chars().next().is_some_and(|c| c.is_ascii_uppercase());
     let words = content.contains(' ') && content.chars().any(|c| c.is_ascii_lowercase());
-    let one_word = content.len() >= 2 && content[1..].chars().all(|c| c.is_ascii_lowercase());
+    let one_word = content.chars().count() >= 2 && content.chars().skip(1).all(|c| c.is_ascii_lowercase());
     starts_upper && (words || one_word) && !content.contains("::")
 }
 

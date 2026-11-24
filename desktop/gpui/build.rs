@@ -6,10 +6,7 @@
     clippy::expect_used,
     reason = "a build script: a panic stops the build with its message, which is what's wanted"
 )]
-#[path = "../ja/mirror.rs"]
-mod ja;
 fn main() {
-    ja::gpui();
     println!("cargo:rerun-if-changed=native/media_views.m");
     println!("cargo:rerun-if-changed=native/menu_icons.m");
     println!("cargo:rerun-if-changed=native/file_icons.m");
@@ -28,6 +25,10 @@ fn main() {
             println!("cargo:rustc-link-arg-bins=-Wl,--stack,8388608");
         }
     }
+    // この写しの app のソース(画面の日本語、desktop/ja/README.md)。
+    #[path = "../ja/mirror.rs"]
+    mod ja;
+    ja::gpui();
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         // The older asset-loading calls work on every macOS this runs on;
         // their deprecation warnings aren't worth an availability split.
