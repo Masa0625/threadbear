@@ -67,7 +67,13 @@ pub fn core() {
         main_call: None,
         out: out_dir(),
     });
-    report.emit(&[dir.join("src"), dir.join("ja"), dir.join("../ja/core"), dir.join("../ja/runtime.rs"), dir.join("../ja/mirror.rs")]);
+    report.emit(&[
+        dir.join("src"),
+        dir.join("ja"),
+        dir.join("../ja/core"),
+        dir.join("../ja/runtime.rs"),
+        dir.join("../ja/mirror.rs"),
+    ]);
 }
 
 fn manifest_dir() -> PathBuf {
@@ -127,7 +133,9 @@ impl Report {
         println!("cargo:rerun-if-env-changed=THREADBEAR_JA_REPORT");
         let loud = std::env::var_os("THREADBEAR_JA_REPORT").is_some();
         for (table, en) in &self.stale {
-            println!("cargo:warning=ja: {table} の \"{en}\" がソースに無い(Mike が変えたら、表を直す)");
+            println!(
+                "cargo:warning=ja: {table} の \"{en}\" がソースに無い(Mike が変えたら、表を直す)"
+            );
         }
         for (table, find) in &self.unmatched_rules {
             println!("cargo:warning=ja: {table} の置き換え \"{find}\" が当たらない");
@@ -259,7 +267,10 @@ fn load_tables(dir: &Path, report: &mut Report) -> BTreeMap<PathBuf, Table> {
                 };
                 let src = Path::new("src").join(rel.with_extension("rs"));
                 let text = std::fs::read_to_string(&p).unwrap_or_default();
-                let name = format!("desktop/ja/{}", p.strip_prefix(dir.join("..")).unwrap_or(&p).display());
+                let name = format!(
+                    "desktop/ja/{}",
+                    p.strip_prefix(dir.join("..")).unwrap_or(&p).display()
+                );
                 match parse_table(&name, &text) {
                     Ok(t) => {
                         for (en, ja) in t.entries.iter().map(|e| (&e.en, &e.ja)) {
@@ -301,7 +312,9 @@ fn parse_table(name: &str, text: &str) -> Result<Table, String> {
             continue;
         }
         if let Some(code) = line.strip_prefix("with:") {
-            let find = pending.take().ok_or_else(|| format!("{}: with: の前に replace: が無い", at()))?;
+            let find = pending
+                .take()
+                .ok_or_else(|| format!("{}: with: の前に replace: が無い", at()))?;
             t.rules.push((find, code.trim().to_owned(), false));
             continue;
         }
@@ -309,9 +322,14 @@ fn parse_table(name: &str, text: &str) -> Result<Table, String> {
             Some(r) => (true, r.trim_start()),
             None => (false, line),
         };
-        let (en, rest) = literal(rest).ok_or_else(|| format!("{}: 英語の \"…\" が読めない", at()))?;
-        let rest = rest.trim_start().strip_prefix('=').ok_or_else(|| format!("{}: = が無い", at()))?;
-        let (ja, rest) = literal(rest.trim_start()).ok_or_else(|| format!("{}: 日本語の \"…\" が読めない", at()))?;
+        let (en, rest) =
+            literal(rest).ok_or_else(|| format!("{}: 英語の \"…\" が読めない", at()))?;
+        let rest = rest
+            .trim_start()
+            .strip_prefix('=')
+            .ok_or_else(|| format!("{}: = が無い", at()))?;
+        let (ja, rest) = literal(rest.trim_start())
+            .ok_or_else(|| format!("{}: 日本語の \"…\" が読めない", at()))?;
         let rest = rest.trim();
         if !(rest.is_empty() || rest.starts_with('#')) {
             return Err(format!("{}: 行の終わりに余分な物", at()));
@@ -376,7 +394,9 @@ impl Mirror<'_> {
         if is_root {
             if let Some(call) = &self.c.main_call {
                 if !main_call(&text, &toks, call, &mut edits) {
-                    self.report.errors.push(format!("{} に `fn main() {{` が無い", self.c.root));
+                    self.report
+                        .errors
+                        .push(format!("{} に `fn main() {{` が無い", self.c.root));
                 }
             }
         }
@@ -395,7 +415,14 @@ impl Mirror<'_> {
     }
 
     /// 各 `mod x;` に、元のファイルの絶対パス(か写しのパス)を付ける。
-    fn child_mods(&mut self, text: &str, toks: &[Tok], path: &Path, own_dir: &Path, edits: &mut Vec<(usize, usize, String)>) {
+    fn child_mods(
+        &mut self,
+        text: &str,
+        toks: &[Tok],
+        path: &Path,
+        own_dir: &Path,
+        edits: &mut Vec<(usize, usize, String)>,
+    ) {
         // 中に書いた `mod a { mod b; }` の b は own_dir/a/b.rs。
         let mut inline: Vec<Option<String>> = Vec::new();
         let mut i = 0;
@@ -403,13 +430,19 @@ impl Mirror<'_> {
             let t = &toks[i];
             match t.kind {
                 Kind::Open('{') => {
-                    let name = (i >= 2 && toks[i - 2].is_ident(text, "mod")).then(|| toks[i - 1].text(text).to_owned());
+                    let name = (i >= 2 && toks[i - 2].is_ident(text, "mod"))
+                        .then(|| toks[i - 1].text(text).to_owned());
                     inline.push(name);
                 }
                 Kind::Close('}') => {
                     inline.pop();
                 }
-                Kind::Ident if t.text(text) == "mod" && i + 2 < toks.len() && toks[i + 1].kind == Kind::Ident && toks[i + 2].is_punct(text, ";") => {
+                Kind::Ident
+                    if t.text(text) == "mod"
+                        && i + 2 < toks.len()
+                        && toks[i + 1].kind == Kind::Ident
+                        && toks[i + 2].is_punct(text, ";") =>
+                {
                     let name = toks[i + 1].text(text);
                     let mut dir = own_dir.to_path_buf();
                     for n in inline.iter().flatten() {
@@ -433,7 +466,8 @@ impl Mirror<'_> {
                     };
                     let child_rel = rel_in_crate(&self.c.dir, &file);
                     // 子を持つ x.rs(x/ がある)と表のあるファイルは写す。ほかは元を指す。
-                    let has_children = file.file_name().is_some_and(|n| n != "mod.rs") && file.with_extension("").is_dir();
+                    let has_children = file.file_name().is_some_and(|n| n != "mod.rs")
+                        && file.with_extension("").is_dir();
                     let target = if has_children || self.tables.contains_key(&child_rel) {
                         let body = self.file(&file, false, &child_rel);
                         let dest = self.c.out.join("ja").join(&child_rel);
@@ -458,7 +492,13 @@ impl Mirror<'_> {
     }
 
     /// 写しは別の所に置くので、`include_str!("相対")` などを絶対パスにする。
-    fn include_paths(&self, text: &str, toks: &[Tok], path: &Path, edits: &mut Vec<(usize, usize, String)>) {
+    fn include_paths(
+        &self,
+        text: &str,
+        toks: &[Tok],
+        path: &Path,
+        edits: &mut Vec<(usize, usize, String)>,
+    ) {
         let dir = path.parent().unwrap_or(Path::new(""));
         for i in 0..toks.len().saturating_sub(3) {
             let name = toks[i].text(text);
@@ -479,9 +519,21 @@ impl Mirror<'_> {
         }
     }
 
-    fn translate(&mut self, text: &str, toks: &[Tok], rel: &Path, table: &mut Table, edits: &mut Vec<(usize, usize, String)>) {
+    fn translate(
+        &mut self,
+        text: &str,
+        toks: &[Tok],
+        rel: &Path,
+        table: &mut Table,
+        edits: &mut Vec<(usize, usize, String)>,
+    ) {
         let file = rel.display().to_string();
-        let index: BTreeMap<String, usize> = table.entries.iter().enumerate().map(|(i, e)| (e.en.clone(), i)).collect();
+        let index: BTreeMap<String, usize> = table
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.en.clone(), i))
+            .collect();
         let mut walk = Walk::default();
         for (i, t) in toks.iter().enumerate() {
             walk.step(text, toks, i);
@@ -497,7 +549,9 @@ impl Mirror<'_> {
             let ctx = walk.context(text, toks, i);
             let Some(&ei) = index.get(content) else {
                 if ctx.ui && ctx.keep.is_none() && looks_like_ui(content) {
-                    self.report.missing.push((file.clone(), line, content.to_owned()));
+                    self.report
+                        .missing
+                        .push((file.clone(), line, content.to_owned()));
                 }
                 continue;
             };
@@ -508,16 +562,28 @@ impl Mirror<'_> {
             }
             if entry.tip || ctx.keep.is_some() {
                 let why = ctx.keep.clone().unwrap_or_else(|| "tip".to_owned());
-                self.report.kept.push((file.clone(), line, content.to_owned(), why));
+                self.report
+                    .kept
+                    .push((file.clone(), line, content.to_owned(), why));
                 continue;
             }
             if let Some((mac_start, open_end)) = ctx.format_head {
                 // format!("en", …) → ja_format!("ja", "en", …)。引数はそのまま。
-                edits.push((mac_start, open_end, format!("{}(\"{}\", ", self.c.format_macro, entry.ja)));
+                edits.push((
+                    mac_start,
+                    open_end,
+                    format!("{}(\"{}\", ", self.c.format_macro, entry.ja),
+                ));
             } else {
-                edits.push((t.start, t.end, format!("{}::t({lit}, \"{}\")", self.c.runtime, entry.ja)));
+                edits.push((
+                    t.start,
+                    t.end,
+                    format!("{}::t({lit}, \"{}\")", self.c.runtime, entry.ja),
+                ));
             }
-            self.report.translated.push((file.clone(), line, content.to_owned()));
+            self.report
+                .translated
+                .push((file.clone(), line, content.to_owned()));
         }
     }
 
@@ -541,7 +607,9 @@ impl Mirror<'_> {
 
 fn rel_in_crate(dir: &Path, file: &Path) -> PathBuf {
     let f = clean(file);
-    f.strip_prefix(clean(dir)).map(Path::to_path_buf).unwrap_or(f)
+    f.strip_prefix(clean(dir))
+        .map(Path::to_path_buf)
+        .unwrap_or(f)
 }
 
 /// `..` と `.` を畳んだパス(ファイルが無くても使える)。
@@ -636,7 +704,9 @@ fn path_attribute(text: &str, toks: &[Tok], start: usize) -> Option<((usize, usi
         if j == 0 || !toks[j - 1].is_punct(text, "#") {
             return None;
         }
-        if toks.get(j + 1).is_some_and(|t| t.is_ident(text, "path")) && toks.get(j + 3).is_some_and(|t| t.kind == Kind::Str) {
+        if toks.get(j + 1).is_some_and(|t| t.is_ident(text, "path"))
+            && toks.get(j + 3).is_some_and(|t| t.kind == Kind::Str)
+        {
             let inner = quoted(toks[j + 3].text(text))?;
             return Some(((toks[j - 1].start, toks[end - 1].end), inner.to_owned()));
         }
@@ -646,7 +716,12 @@ fn path_attribute(text: &str, toks: &[Tok], start: usize) -> Option<((usize, usi
 }
 
 /// 根の一番外の `fn main() {` の `{` の後ろに、式を同じ行に足す。
-fn main_call(text: &str, toks: &[Tok], call: &str, edits: &mut Vec<(usize, usize, String)>) -> bool {
+fn main_call(
+    text: &str,
+    toks: &[Tok],
+    call: &str,
+    edits: &mut Vec<(usize, usize, String)>,
+) -> bool {
     let mut depth = 0i32;
     for i in 0..toks.len() {
         if depth == 0
@@ -700,7 +775,11 @@ fn blank_inner_attributes(text: &str) -> (String, Vec<String>) {
             Kind::Close(_) => outer -= 1,
             _ => {}
         }
-        if outer == 0 && toks[i].is_punct(text, "#") && toks[i + 1].is_punct(text, "!") && toks[i + 2].kind == Kind::Open('[') {
+        if outer == 0
+            && toks[i].is_punct(text, "#")
+            && toks[i + 1].is_punct(text, "!")
+            && toks[i + 2].kind == Kind::Open('[')
+        {
             let mut depth = 0;
             let mut j = i + 2;
             while j < toks.len() {
@@ -732,14 +811,23 @@ fn blank_inner_attributes(text: &str) -> (String, Vec<String>) {
     // `//!` は行ごと注釈にする。
     s = s
         .lines()
-        .map(|l| if l.trim_start().starts_with("//!") { l.replacen("//!", "// ", 1) } else { l.to_owned() })
+        .map(|l| {
+            if l.trim_start().starts_with("//!") {
+                l.replacen("//!", "// ", 1)
+            } else {
+                l.to_owned()
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n");
     (s, attrs)
 }
 
 fn strip_comments(text: &str) -> String {
-    text.lines().filter(|l| !l.trim_start().starts_with("//")).collect::<Vec<_>>().join("\n")
+    text.lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn squash(s: &str) -> String {
@@ -748,9 +836,13 @@ fn squash(s: &str) -> String {
 
 /// 表に無い時に「画面の文らしい」と知らせる物: 大文字で始まり、小文字を含む。
 fn looks_like_ui(content: &str) -> bool {
-    let starts_upper = content.chars().next().is_some_and(|c| c.is_ascii_uppercase());
+    let starts_upper = content
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase());
     let words = content.contains(' ') && content.chars().any(|c| c.is_ascii_lowercase());
-    let one_word = content.chars().count() >= 2 && content.chars().skip(1).all(|c| c.is_ascii_lowercase());
+    let one_word =
+        content.chars().count() >= 2 && content.chars().skip(1).all(|c| c.is_ascii_lowercase());
     starts_upper && (words || one_word) && !content.contains("::")
 }
 
@@ -868,7 +960,11 @@ pub fn lex(text: &str) -> Vec<Tok> {
             push(&mut toks, Kind::Ident, start, i);
         } else if c.is_ascii_digit() {
             let start = i;
-            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_' || (b[i] == b'.' && b.get(i + 1).is_some_and(u8::is_ascii_digit))) {
+            while i < b.len()
+                && (b[i].is_ascii_alphanumeric()
+                    || b[i] == b'_'
+                    || (b[i] == b'.' && b.get(i + 1).is_some_and(u8::is_ascii_digit)))
+            {
                 i += 1;
             }
             push(&mut toks, Kind::Num, start, i);
@@ -880,8 +976,19 @@ pub fn lex(text: &str) -> Vec<Tok> {
             i += 1;
         } else {
             let two = text.get(i..i + 2).unwrap_or("");
-            let len = if matches!(two, "=>" | "==" | "!=" | "::" | "->" | "&&" | "||" | "<=" | ">=") { 2 } else { 1 };
-            let len = if !text.is_char_boundary(i + len) { 1 } else { len };
+            let len = if matches!(
+                two,
+                "=>" | "==" | "!=" | "::" | "->" | "&&" | "||" | "<=" | ">="
+            ) {
+                2
+            } else {
+                1
+            };
+            let len = if !text.is_char_boundary(i + len) {
+                1
+            } else {
+                len
+            };
             push(&mut toks, Kind::Punct, i, i + len);
             i += len;
         }
@@ -954,9 +1061,38 @@ struct Frame {
 /// ここに直に渡る文は、英語のまま(画面に描く時だけ訳す・または訳さない)。
 const KEEP: &[&str] = &[
     // ツールチップ: 記録と自動操作の名前を兼ねる(tips.rs)。描く時に訳す。
-    "tip", "tipped", "tooltip", "aria_label",
+    "tip",
+    "tipped",
+    "tooltip",
+    "aria_label",
     // 画面の外: 記録・JSON・id・試験・止まる時の文。
-    "json", "id", "key_context", "debug", "info", "warn", "error", "trace", "log", "panic", "assert", "assert_eq", "assert_ne", "debug_assert", "expect", "println", "eprintln", "unreachable", "matches", "include_str", "env", "concat", "starts_with", "ends_with", "contains", "strip_prefix", "eq",
+    "json",
+    "id",
+    "key_context",
+    "debug",
+    "info",
+    "warn",
+    "error",
+    "trace",
+    "log",
+    "panic",
+    "assert",
+    "assert_eq",
+    "assert_ne",
+    "debug_assert",
+    "expect",
+    "println",
+    "eprintln",
+    "unreachable",
+    "matches",
+    "include_str",
+    "env",
+    "concat",
+    "starts_with",
+    "ends_with",
+    "contains",
+    "strip_prefix",
+    "eq",
 ];
 
 impl Walk {
@@ -966,11 +1102,25 @@ impl Walk {
             Kind::Open(open) => {
                 let prev = i.checked_sub(1).map(|p| &toks[p]);
                 let (callee, is_macro, macro_start) = match prev {
-                    Some(p) if p.is_punct(text, "!") && i >= 2 && toks[i - 2].kind == Kind::Ident => (Some(toks[i - 2].text(text).to_owned()), true, toks[i - 2].start),
-                    Some(p) if p.kind == Kind::Ident && open == '(' => (Some(p.text(text).to_owned()), false, p.start),
+                    Some(p)
+                        if p.is_punct(text, "!") && i >= 2 && toks[i - 2].kind == Kind::Ident =>
+                    {
+                        (
+                            Some(toks[i - 2].text(text).to_owned()),
+                            true,
+                            toks[i - 2].start,
+                        )
+                    }
+                    Some(p) if p.kind == Kind::Ident && open == '(' => {
+                        (Some(p.text(text).to_owned()), false, p.start)
+                    }
                     _ => (None, false, t.start),
                 };
-                let attr = open == '[' && prev.is_some_and(|p| p.is_punct(text, "#") || p.is_punct(text, "!") && i >= 2 && toks[i - 2].is_punct(text, "#"));
+                let attr = open == '['
+                    && prev.is_some_and(|p| {
+                        p.is_punct(text, "#")
+                            || p.is_punct(text, "!") && i >= 2 && toks[i - 2].is_punct(text, "#")
+                    });
                 let parent_skip = self.frames.last().is_some_and(|f| f.skip);
                 let skip = parent_skip || (open == '{' && self.test_next);
                 if open == '{' {
@@ -980,7 +1130,10 @@ impl Walk {
                     // #[cfg(test)]・#[test]・#[cfg(feature = "automation")](自動操作の
                     // build だけの物。そこではいつも英語)。
                     let body: String = toks[i + 1..].iter().take(6).map(|t| t.text(text)).collect();
-                    if body.starts_with("cfg(test)") || body.starts_with("test]") || body.starts_with("cfg(feature=\"automation\")") {
+                    if body.starts_with("cfg(test)")
+                        || body.starts_with("test]")
+                        || body.starts_with("cfg(feature=\"automation\")")
+                    {
                         self.test_next = true;
                     }
                 }
@@ -1015,7 +1168,9 @@ impl Walk {
                 }
             }
             Kind::Ident if matches!(t.text(text), "const" | "static") => {
-                let next_fn = toks.get(i + 1).is_some_and(|n| n.is_ident(text, "fn") || n.is_ident(text, "unsafe"));
+                let next_fn = toks
+                    .get(i + 1)
+                    .is_some_and(|n| n.is_ident(text, "fn") || n.is_ident(text, "unsafe"));
                 let in_braces = self.frames.last().is_none_or(|f| f.open == '{');
                 if !next_fn && in_braces && self.const_depth.is_none() {
                     self.const_depth = Some(self.frames.len());
@@ -1032,12 +1187,23 @@ impl Walk {
         let compared = matches!(prev, "==" | "!=") || matches!(next, "==" | "!=" | "=>" | "|");
         let ui = !in_skip && self.const_depth.is_none() && !compared;
         // 一番近い呼び出し(`{` と `[` は通り抜ける)。
-        let call = self.frames.iter().rev().find(|f| f.open == '(' || f.is_macro);
-        let keep = call.and_then(|f| f.callee.clone()).filter(|c| KEEP.contains(&c.as_str()));
+        let call = self
+            .frames
+            .iter()
+            .rev()
+            .find(|f| f.open == '(' || f.is_macro);
+        let keep = call
+            .and_then(|f| f.callee.clone())
+            .filter(|c| KEEP.contains(&c.as_str()));
         let format_head = self.frames.last().and_then(|f| {
-            (f.is_macro && f.callee.as_deref() == Some("format") && f.arg == 0).then_some((f.macro_start, f.open_end))
+            (f.is_macro && f.callee.as_deref() == Some("format") && f.arg == 0)
+                .then_some((f.macro_start, f.open_end))
         });
-        Context { ui, keep, format_head }
+        Context {
+            ui,
+            keep,
+            format_head,
+        }
     }
 }
 
@@ -1046,7 +1212,11 @@ mod tests {
     use super::*;
 
     fn rewrite(src: &str, table: &str) -> (String, Report) {
-        let dir = std::env::temp_dir().join(format!("ja-mirror-{}-{}", std::process::id(), src.len() + table.len()));
+        let dir = std::env::temp_dir().join(format!(
+            "ja-mirror-{}-{}",
+            std::process::id(),
+            src.len() + table.len()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::create_dir_all(dir.join("ja")).unwrap();
@@ -1074,8 +1244,14 @@ mod tests {
 
     #[test]
     fn a_literal_on_screen_picks_its_language() {
-        let (out, r) = rewrite("fn f() -> &'static str {\n    \"Dismiss\"\n}\n", "\"Dismiss\" = \"閉じる\"\n");
-        assert_eq!(out, "fn f() -> &'static str {\n    crate::ja::t(\"Dismiss\", \"閉じる\")\n}\n");
+        let (out, r) = rewrite(
+            "fn f() -> &'static str {\n    \"Dismiss\"\n}\n",
+            "\"Dismiss\" = \"閉じる\"\n",
+        );
+        assert_eq!(
+            out,
+            "fn f() -> &'static str {\n    crate::ja::t(\"Dismiss\", \"閉じる\")\n}\n"
+        );
         assert_eq!(r.translated.len(), 1);
     }
 
@@ -1084,14 +1260,20 @@ mod tests {
         let src = "fn f(t: &str) -> String {\n    format!(\n        \"Open {t}\",\n    )\n}\n";
         let (out, _) = rewrite(src, "\"Open {t}\" = \"{t} を開く\"\n");
         assert_eq!(out.lines().count(), src.lines().count());
-        assert!(out.contains("crate::ja_format!(\"{t} を開く\", \n        \"Open {t}\","), "{out}");
+        assert!(
+            out.contains("crate::ja_format!(\"{t} を開く\", \n        \"Open {t}\","),
+            "{out}"
+        );
     }
 
     #[test]
     fn tooltips_logs_tests_and_comparisons_stay_english() {
         let src = "fn f(e: E) -> E {\n    e.tip(\"Copy\").child(\"Copy\")\n}\nfn g(x: &str) -> bool { x == \"Copy\" }\nconst C: &str = \"Copy\";\n#[cfg(test)]\nmod tests {\n    fn h() { \"Copy\"; }\n}\n";
         let (out, r) = rewrite(src, "\"Copy\" = \"コピー\"\n");
-        assert!(out.contains("e.tip(\"Copy\").child(crate::ja::t(\"Copy\", \"コピー\"))"), "{out}");
+        assert!(
+            out.contains("e.tip(\"Copy\").child(crate::ja::t(\"Copy\", \"コピー\"))"),
+            "{out}"
+        );
         assert!(out.contains("x == \"Copy\""));
         assert!(out.contains("const C: &str = \"Copy\";"));
         assert!(out.contains("fn h() { \"Copy\"; }"));
@@ -1101,14 +1283,20 @@ mod tests {
 
     #[test]
     fn a_tip_entry_is_left_for_the_tooltip_to_draw() {
-        let (out, r) = rewrite("fn f(p: &str) -> String { format!(\"In {}\", p) }\n", "tip \"In {}\" = \"{} の中\"\n");
+        let (out, r) = rewrite(
+            "fn f(p: &str) -> String { format!(\"In {}\", p) }\n",
+            "tip \"In {}\" = \"{} の中\"\n",
+        );
         assert!(out.contains("format!(\"In {}\", p)"));
         assert_eq!(r.draw, vec![("In {}".to_owned(), "{} の中".to_owned())]);
     }
 
     #[test]
     fn new_words_and_gone_words_are_reported() {
-        let (_, r) = rewrite("fn f(e: E) -> E { e.child(\"Brand new words\") }\n", "\"Not there any more\" = \"もう無い\"\n");
+        let (_, r) = rewrite(
+            "fn f(e: E) -> E { e.child(\"Brand new words\") }\n",
+            "\"Not there any more\" = \"もう無い\"\n",
+        );
         assert_eq!(r.missing.len(), 1);
         assert_eq!(r.missing[0].2, "Brand new words");
         assert_eq!(r.stale.len(), 1);

@@ -135,7 +135,9 @@ fn fill(en: &str, ja: &str, text: &str) -> Option<String> {
             Piece::Hole(key) => {
                 // 次の文字の部分まで。最後なら残り全部。
                 let until = match en.get(i + 1) {
-                    Some(Piece::Text(t)) if !t.is_empty() && i + 2 < en.len() => rest.find(t.as_str())?,
+                    Some(Piece::Text(t)) if !t.is_empty() && i + 2 < en.len() => {
+                        rest.find(t.as_str())?
+                    }
                     Some(Piece::Text(t)) if !t.is_empty() => rest.strip_suffix(t.as_str())?.len(),
                     _ => rest.len(),
                 };
@@ -175,7 +177,10 @@ mod tests {
         assert!(!on());
         assert_eq!(t("Dismiss", "閉じる"), "Dismiss");
         assert_eq!(ja_format!("{} 件", "{} things", 3), "3 things");
-        assert_eq!(draw("Copy link", &[("Copy link", "リンクをコピー")]), "Copy link");
+        assert_eq!(
+            draw("Copy link", &[("Copy link", "リンクをコピー")]),
+            "Copy link"
+        );
     }
 
     #[test]
@@ -198,7 +203,10 @@ mod tests {
     // 埋める所に多バイトの文字が来ても、文字の途中で切らない。
     #[test]
     fn a_tooltip_with_japanese_in_its_holes_does_not_panic() {
-        let entries = [("Open {title} now", "今 {title} を開く"), ("Saved in {}.", "{} に保存した。")];
+        let entries = [
+            ("Open {title} now", "今 {title} を開く"),
+            ("Saved in {}.", "{} に保存した。"),
+        ];
         let ja = |text| draw_in(true, text, &entries).into_owned();
         assert_eq!(ja("Open 受信箱 now"), "今 受信箱 を開く");
         assert_eq!(ja("Saved in 書類."), "書類 に保存した。");
