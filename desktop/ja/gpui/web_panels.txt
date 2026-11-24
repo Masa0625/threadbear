@@ -1,0 +1,94 @@
+# gpui/src/web_panels.rs の画面の文(書き方は desktop/ja/README.md)。
+# パッチの Web のパネルと Convex のダッシュボード。.tip(…) は無い。
+# ツールチップは PushButton(push_button.txt の keep で、名前は英語・表示は日本語)と、
+# tipped・tipped_as・bar_button(keep の無い helper。String で受けるので置き場が
+# 分からない)を通る。後ろの物に渡る文は tip にして、名前も表示も英語のまま残す。
+
+# Open in browser は、バーのボタンのツールチップ(名前)と、PushButton の札の両方に
+# 使う。表では tip にし、札を描く所だけを日本語にする。
+replace: PushButton::new("web-panel-open",
+with: PushButton::new("web-panel-open", crate::ja_tip::shown_str(
+replace: , open.tip.clone())
+with: ), open.tip.clone())
+tip "Open in browser" = "ブラウザで開く"
+
+# 画面に出ない文(「表に無い」の一覧から外す)
+skip "copy"  # ページに送る編集の命令の名前
+skip "cut"  # 同上
+skip "paste"  # 同上
+skip "undo"  # 同上
+skip "redo"  # 同上
+skip "the window has no view"  # 自動操作(native-click・send_keys)に返すエラー
+skip "convex:{}"  # ページの鍵
+skip "convex:{selected}"  # 同上
+skip "convex:{deployment}"  # 同上
+skip "pin:{key}"  # 同上
+skip "key"  # 記号の名前
+skip "waiting"  # サインインの状態の値(== で比べる)
+skip "waiting (main window: {main})"  # dump に書く状態
+skip "running"  # 同上
+skip "this page"  # 別のファイル(web_runtime.rs の "Show {wants}? …")の文に入るかけら。その文に表ができたら訳す
+skip "this panel's page"  # 同上
+skip "the Convex dashboard here"  # 同上
+skip "prompt"  # 自動操作の dump の値と鍵
+skip "starting"  # 同上
+skip "note"  # 同上
+skip "finding"  # 同上
+skip "page"  # 同上
+skip "loading"  # 同上
+skip "failed"  # 同上
+skip "shows"  # 同上
+skip "convex"  # 同上
+skip "url"  # 同上
+skip "buttons"  # 同上
+skip "web"  # 同上
+
+# バーのボタン(bar_button は String のツールチップを tipped に渡す。名前なので英語)
+tip "Make a new deploy key for {selected}, if the old one was revoked" = "古いキーが取り消されたら、{selected} の新しいデプロイキーを作る"
+tip "Reload panel" = "パネルを読み込み直す"
+tip "Open {selected} in browser" = "{selected} をブラウザで開く"
+tip "Back" = "戻る"
+tip "Reload the panel's own page" = "パネルのページを読み込み直す"
+
+# Convex の見出し(tipped・tipped_as に渡る文。名前なので英語)
+tip "Choose the deployment shown in this panel" = "このパネルに出すデプロイメントを選ぶ"
+tip "Couldn't load other deployments: {}" = "ほかのデプロイメントを読み込めませんでした: {}"
+
+# デプロイメントのメニュー(ネイティブのメニュー。ツールチップは表示だけ)
+"Show {} in this panel" = "{} をこのパネルに出す"
+"Refresh deployments" = "デプロイメントを読み直す"
+"Look up this project's development and production deployments again" = "このプロジェクトの開発用と本番用のデプロイメントを、もう一度調べる"
+
+# ページを出せない時
+"Couldn't show this page: {why}" = "このページを出せませんでした: {why}"
+"This page can't show here." = "このページはここに出せません。"
+"its folder couldn't be read" = "フォルダを読めませんでした"
+"This panel has no page to show." = "このパネルには出すページがありません。"
+"This panel's page isn't a web page, so it opens outside the app." = "このパネルのページは Web のページではないので、アプリの外で開きます。"
+"This panel's page shows when it's in the main window." = "このパネルのページは、メインのウィンドウにある時に出ます。"
+"There's no web runtime here, so this page opens in your browser." = "ここには Web ランタイムが無いので、このページはブラウザで開きます。"
+"The window has no view to show the page in." = "ウィンドウに、ページを出すビューがありません。"
+"The web runtime didn't start: {why}" = "Web ランタイムが始まりませんでした: {why}"
+"There's no web runtime for this system yet, so this page opens in your browser." = "この OS 向けの Web ランタイムはまだ無いので、このページはブラウザで開きます。"
+"This page shows here once the web runtime is installed (Settings > General)." = "Web ランタイムを入れると、このページはここに出ます(設定 > 一般)。"
+"Starting the web runtime…" = "Web ランタイムを始めています…"
+
+# デプロイキーとサインイン
+"The runner's answer had no deploy key in it." = "ランナーの答えに、デプロイキーが入っていませんでした。"
+"The sign-in didn't finish. Try again." = "サインインが終わりませんでした。もう一度試してください。"
+"Approve the sign-in in your browser." = "ブラウザでサインインを認めてください。"
+"Convex shows the code {code}. The dashboard opens here once you've approved it." = "Convex にコード {code} が出ます。認めると、ダッシュボードがここに開きます。"
+"Open the page again" = "ページをもう一度開く"
+"Open Convex's sign-in page in your browser" = "Convex のサインインのページをブラウザで開く"
+"Cancel" = "やめる"
+"Stop waiting for the sign-in" = "サインインを待つのをやめる"
+"Sign in to Convex to see this dashboard." = "このダッシュボードを見るには、Convex にサインインしてください。"
+"Your browser opens to approve it, then the dashboard loads here by itself." = "ブラウザが開くので認めてください。その後、ダッシュボードがここにひとりでに出ます。"
+"Sign in to Convex" = "Convex にサインイン"
+"Sign the runner's Convex CLI in, in your browser" = "ランナーの Convex CLI を、ブラウザでサインインさせる"
+"Sign in as someone else" = "別の人としてサインイン"
+"Sign the runner's Convex CLI in with another Convex account" = "ランナーの Convex CLI を、別の Convex のアカウントでサインインさせる"
+"Try again" = "もう一度"
+"Ask the runner for a deploy key again" = "ランナーにデプロイキーをもう一度頼む"
+"Finding deployments…" = "デプロイメントを探しています…"
+"Getting a deploy key for {selected}…" = "{selected} のデプロイキーを取っています…"

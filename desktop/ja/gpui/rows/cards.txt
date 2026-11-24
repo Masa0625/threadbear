@@ -1,0 +1,142 @@
+# gpui/src/rows/cards.rs の画面の文(書き方は desktop/ja/README.md)。
+# スレッドの中で、エージェントが待つカード(許可・質問・秘密の値・計画・レビュー、
+# 別のランナーからのスレッドの依頼)。コマンド・出力・ファイル名・質問と選び・
+# 依頼文・理由・計画の本文は、エージェントやランナーから来た文で、表には無い。
+# 表にあるのは、このファイルが書く決まった文だけ。
+tip-method: tip
+
+# カードのボタン(pill)は、札の文を読み上げの名前(aria_label)にも使う(specs は
+# "Allow 4" や "Deny all" で押す)。札は日本語にし、名前は英語に戻す。表の文は
+# 置き場で英語が分かる(desktop/ja/tip.rs の keep)。
+replace: .aria_label(SharedString::from(title.to_owned()))
+with: .aria_label(crate::ja_tip::keep(title))
+replace: .aria_label(SharedString::from(toggle_title.to_owned()))
+with: .aria_label(crate::ja_tip::keep(toggle_title))
+replace: .aria_label(SharedString::from(threadbear_core::ja::t(
+with: .aria_label(crate::ja_tip::keep(threadbear_core::ja::t(
+# format! や .to_owned() で String になった札は置き場が分からないので、作る式を
+# 閉包にして、英語でもう一度作り(ja::english)、名前にする。
+replace: let allow_words =
+with: let allow_words_make = ||
+replace: "Allow {count}");
+with: "Allow {count}"); let allow_words = allow_words_make(); let allow_name = threadbear_core::ja::english(allow_words_make);
+replace: .child(allow.test_support())
+with: .child(allow.aria_label(allow_name).test_support())
+replace: let open_title =
+with: let open_title_make = ||
+replace: let open_tip =
+with: let open_title = open_title_make(); let open_name = threadbear_core::ja::english(open_title_make); let open_tip =
+replace: pill(("open-review", ix), &open_title, false, true, None, cx)
+with: pill(("open-review", ix), &open_title, false, true, None, cx).aria_label(open_name)
+
+# const の文(表では訳せない)を、使う所で選ぶ。PLAN_INFO はツールチップで、
+# 写しが二度作る(英語の回は名前、日本語の回は表示)。PROMISE は表示だけ。
+# PROMISE_TIP は、言語が決まった後の変数を通ってツールチップになるので、英語のまま。
+replace: (PLAN_INFO)
+with: (if threadbear_core::ja::on() { "先に計画: エージェントは読んで計画を立て、あなたが認めるまで何も変えません。「進める」で、スレッドの前の権限のまま始めます。「送り返す…」か、何か書くと、もう一度考え直させます。" } else { PLAN_INFO })
+replace: PROMISE.to_owned()
+with: (if threadbear_core::ja::on() { "会話には入れず、このエージェントのコマンドが 24 時間だけ読める非公開のファイルに置きます" } else { PROMISE }).to_owned()
+
+# 画面に出ない文(「表に無い」の一覧から外す)
+skip "cmd"  # 部品の id
+skip "url"  # 同上
+skip "title"  # 同上
+skip "brief"  # 同上
+skip "approve"  # 同上
+skip "tick"  # 同上
+skip "cross"  # 同上
+skip "other"  # 入力の箱の id のかけら
+skip "secret"  # 同上
+skip "decline"  # 部品の id
+skip "answered"  # 部品の id と、ランナーに送る答えの値
+skip "allow"  # ランナーに送る答えの値
+skip "deny"  # 同上
+skip "clock"  # 記号の名前
+skip "a secret's field"  # 別のファイル(unsent.rs)の文に入るかけら。その文に表ができたら訳す
+
+# 別のランナーからの、スレッドを始める依頼
+"Reading the request…" = "依頼を読んでいます…"
+"Asks before edits" = "編集の前に聞く"
+"Auto" = "自動"
+"Plan first" = "先に計画"
+"Full access" = "フルアクセス"
+"Unknown ({other})" = "不明({other})"
+"Folder: {}" = "フォルダ: {}"
+"the usual one" = "いつもの所"
+"Access: {access}" = "権限: {access}"
+"Model: {model}{}" = "モデル: {model}{}"
+"Another machine wants to start a thread" = "別のマシンがスレッドを始めたがっています"
+"Couldn't read this request" = "この依頼を読めませんでした"
+"Couldn't read this request." = "この依頼を読めませんでした。"
+"this Mac" = "この Mac"
+"{} wants to start a thread on {place}" = "{} が {place} でスレッドを始めたがっています"
+"It asked for \u{201C}{}\u{201D}, which isn't one of your machines." = "頼まれた「{}」は、あなたのマシンにありません。"
+"{folder} isn't a folder on this Mac. Start it sends the request back, to ask again with one that is." = "{folder} はこの Mac のフォルダではありません。「始める」で依頼を送り返し、ある所でもう一度頼んでもらいます。"
+"Start it" = "始める"
+"Start this thread with this brief" = "この依頼文でスレッドを始める"
+"Don't" = "始めない"
+"Don't start it; the asking thread is told no" = "始めない。頼んだスレッドには断ったと伝えます"
+
+# 許可のカード
+"Allow" = "許可"
+"Let it do this once (Return)" = "今回だけさせる(Return)"
+"Always allow" = "いつも許可"
+"Allow this, and anything like it for the rest of this thread" = "これと、このスレッドでこの先の似た物を許可する"
+"Deny" = "拒否"
+"Don't let it do this; the agent is told no" = "させない。エージェントには断ったと伝えます"
+
+# 呼び出しが重なった許可のカード
+"Make these {} changes?" = "この {} 件の変更をしますか?"
+"Allow these {} steps?" = "この {} 件の手順を許可しますか?"
+"Allow this one" = "これを許可する"
+"Don't allow this one; the agent is told no" = "これは許可しない。エージェントには断ったと伝えます"
+"Allow {count}" = "{count} 件を許可"
+"Let it do all of these (Return)" = "これを全部させる(Return)"
+"Let it do the ticked ones; the rest are refused (Return)" = "印の付いた物だけさせる。残りは断ります(Return)"
+"Deny all" = "すべて拒否"
+"Don't let it do any of these; the agent is told no" = "どれもさせない。エージェントには断ったと伝えます"
+
+# 質問のカード
+"Answered" = "答えました"
+"Send answer" = "答えを送る"
+"Send your answers to the agent" = "答えをエージェントに送る"
+"Something else" = "ほかの答え"
+
+# 秘密の値のカード
+"Save securely" = "安全に保存"
+"Save it to a private file for the agent (Return)" = "エージェント用の非公開のファイルに保存する(Return)"
+"Decline" = "断る"
+"Don't give it; the agent is told you declined" = "渡さない。エージェントには断ったと伝えます"
+"Paste the secret" = "秘密の値を貼る"
+
+# 計画のカード
+"Plan" = "計画"
+"Waiting for you" = "あなたを待っています"
+"Sent back" = "送り返しました"
+"Approved" = "認めました"
+"Go ahead" = "進める"
+"Approve the plan and let it start" = "計画を認めて、始めさせる"
+"Send back…" = "送り返す…"
+"Tell it what to change; it plans again" = "変える所を伝える。計画を立て直します"
+"Hide plan" = "計画を隠す"
+"Show plan" = "計画を見る"
+"Show less" = "短くする"
+"Show full plan" = "計画を全部見る"
+"Show less of it" = "短くして見る"
+"Show the whole plan" = "計画の全部を見る"
+
+# レビューのカード
+"Waiting for your review" = "あなたのレビューを待っています"
+"Picked {}. {}" = "{} を選びました。{}"
+"Notes sent" = "メモを送りました"
+"Answered in the thread" = "スレッドで答えました"
+"Review closed" = "レビューは閉じました"
+"{} images · {state}" = "画像 {} 枚 · {state}"
+"Compare {} images" = "画像 {} 枚を比べる"
+"Open review" = "レビューを開く"
+"Open the images side by side to pick and reply" = "画像を並べて開き、選んで返事する"
+"Open the review to look at the images and what was sent" = "レビューを開いて、画像と送った物を見る"
+# 一つずつの画像のツールチップは、読み上げの名前(aria_label)にも使い、変数が
+# 二か所で使われて二度作れない。名前なので英語のまま。
+tip "Open the review on {}" = "{} でレビューを開く"
+tip "Look at {} and what was sent" = "{} と送った物を見る"
