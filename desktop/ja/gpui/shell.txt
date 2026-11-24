@@ -6,6 +6,10 @@
 # ツールチップと同じ考えで、名前は英語、表示は日本語にする:
 # - メニューは英語で作って(GPUI はその題で Window のメニューを見つける)、
 #   絵を付けてから、各メニューの中の項目の題だけを日本語に書き換える。
+# - 書き換えは並びの番号で当てる。macOS が足した項目で番号がずれた所に、別の
+#   コマンドの名前を付けないよう、今の題が同じ並びの英語の題(ja_named)と同じ
+#   項目だけを書き換え、違う項目とその子のメニューは英語のまま残す
+#   (照らし合わせは desktop/ja/menu.rs)。
 # - 記録の名前(menu_path)は英語で作る。
 replace: cx.set_menus(gpui_menus(&menus));
 with: let ja_named = threadbear_core::ja::english(|| self.menu_model(cx)); cx.set_menus(gpui_menus(&ja_named));
@@ -13,9 +17,9 @@ with: let ja_named = threadbear_core::ja::english(|| self.menu_model(cx)); cx.se
 replace: fn tb_menu_icons();
 with: fn tb_menu_icons( );
 replace: tb_menu_icons();
-with: tb_menu_icons(); if threadbear_core::ja::on() { ja_retitle_menus(&menus) }
+with: tb_menu_icons(); if threadbear_core::ja::on() { ja_retitle_menus(&ja_named, &menus) }
 replace: fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
-with: #[cfg(target_os = "macos")] fn ja_retitle_menus(menus: &[TopMenu]) { fn retitle(menu: &objc2_app_kit::NSMenu, items: &[MenuEntry]) { for (at, entry) in (0..).zip(items) { let Some(item) = menu.itemAtIndex(at) else { return }; match entry { MenuEntry::Item { title, .. } => item.setTitle(&objc2_foundation::NSString::from_str(title)), MenuEntry::Submenu { title, items } => { item.setTitle(&objc2_foundation::NSString::from_str(title)); if let Some(sub) = item.submenu() { retitle(&sub, items) } } _ => {} } } } let Some(bar) = objc2::MainThreadMarker::new().and_then(|mtm| objc2_app_kit::NSApplication::sharedApplication(mtm).mainMenu()) else { return }; for (at, top) in (0..).zip(menus) { if let Some(menu) = bar.itemAtIndex(at).and_then(|item| item.submenu()) { retitle(&menu, &top.items) } } } fn ja_core_word(en: &'static str) -> &'static str { threadbear_core::ja::TABLE.iter().find(|e| e.0 == en).map_or(en, threadbear_core::ja::t) } fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
+with: #[cfg(target_os = "macos")] fn ja_retitle_menus(en: &[TopMenu], ja: &[TopMenu]) { use crate::ja_menu::Place; struct Native(objc2::rc::Retained<objc2_app_kit::NSMenu>); impl crate::ja_menu::Menu for Native { fn item(&self, at: usize) -> Option<(String, Option<Native>)> { let item = self.0.itemAtIndex(isize::try_from(at).ok()?)?; Some((item.title().to_string(), item.submenu().map(Native))) } fn set_title(&self, at: usize, title: &str) { if let Some(item) = isize::try_from(at).ok().and_then(|at| self.0.itemAtIndex(at)) { item.setTitle(&objc2_foundation::NSString::from_str(title)) } } } fn places<'a>(en: &'a [MenuEntry], ja: &'a [MenuEntry]) -> Vec<Place<'a>> { en.iter().zip(ja).map(|pair| match pair { (MenuEntry::Item { title: en, .. }, MenuEntry::Item { title: ja, .. }) => Place::Titled { en: en.as_str(), ja: ja.as_str(), items: Vec::new() }, (MenuEntry::Submenu { title: en, items: en_items }, MenuEntry::Submenu { title: ja, items: ja_items }) => Place::Titled { en: en.as_str(), ja: ja.as_str(), items: places(en_items, ja_items) }, _ => Place::Kept }).collect() } let Some(bar) = objc2::MainThreadMarker::new().and_then(|mtm| objc2_app_kit::NSApplication::sharedApplication(mtm).mainMenu()) else { return }; let tops: Vec<Place> = en.iter().zip(ja).map(|(en, ja)| Place::Titled { en: en.title.as_str(), ja: ja.title.as_str(), items: places(&en.items, &ja.items) }).collect(); crate::ja_menu::retitle(&Native(bar), &tops) } fn ja_core_word(en: &'static str) -> &'static str { threadbear_core::ja::TABLE.iter().find(|e| e.0 == en).map_or(en, threadbear_core::ja::t) } fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
 replace: pub(crate) fn menu_path(&self, command: Command, cx: &App) -> Option<String> {
 with: pub(crate) fn menu_path(&self, command: Command, cx: &App) -> Option<String> { threadbear_core::ja::english(|| self.ja_menu_path(command, cx)) } fn ja_menu_path(&self, command: Command, cx: &App) -> Option<String> {
 # 休止のメニューの 2 つは core の定数(英語のまま)。core の表(sidebar.txt)の行を

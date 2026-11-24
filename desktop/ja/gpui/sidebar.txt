@@ -1,0 +1,165 @@
+# gpui/src/sidebar.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
+# 行のメニュー、休止と削除の確かめ、見出しのボタン、行と行の上のツールチップ、
+# サブエージェントの行。行の右の文や時刻は core の sidebar.rs が作る(core の表)。
+
+# ツールチップを作る所: tipped! の 3 つ目の引数と、Tip の .tip(…)。
+tip-macro: tipped! 3
+tip-method: tip
+
+# tipped! を、名前を英語、表示を日本語で作る形にする(header.txt と同じ)。この
+# macro はほかのファイル(librarian.rs・archive_search.rs・thread.rs・projects_list.rs)
+# も使うので、そこでも同じ形になる。
+replace: let tip_text: SharedString = $tip.into();
+with: let ja_faces = crate::ja_tip::faces(|| ::std::clone::Clone::clone(&($tip))); let tip_text: SharedString = ja_faces.name.clone();
+replace: let shown = tip_text.clone();
+with: let shown = ja_faces;
+replace: crate::tips::Tip::tip(
+with: crate::tips::Tip::ja_tip(
+
+# RowAction の tip は自分の関数(行の上のボタンの名前)で、Tip の .tip ではない。
+replace: action.ja_tip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&(t))))
+with: action.tip(t)
+replace: a.ja_tip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&(t))))
+with: a.tip(t)
+
+# icon_button は受けた文を tipped! に渡す。表の literal(行の上のボタンの名前)の
+# 置き場を保つ(push_button.txt と同じ keep)。
+replace: tip: impl Into<SharedString>,
+with: tip: impl Into<SharedString> + AsRef<str>,
+replace: let (hover, pressed, secondary, fg) = (p.icon_hover, p.icon_pressed, p.secondary, p.fg);
+with: let tip = crate::ja_tip::keep(tip); let (hover, pressed, secondary, fg) = (p.icon_hover, p.icon_pressed, p.secondary, p.fg);
+
+# 行のツールチップ(題と場所。読み上げの名前を兼ねる)を二度作る。題を作る式を
+# closure にして、英語の回でも作り直す(無題の時の「無題」)。
+replace: let title = if t.title.is_empty() {
+with: let ja_make_title = || if t.title.is_empty() {
+replace: let tip = format!("{title}\n{place}{}", abbreviate_home(&t.cwd));
+with: let title = ja_make_title(); let tip = crate::ja_tip::both(|| format!("{}\n{place}{}", ja_make_title(), abbreviate_home(&t.cwd)));
+replace: .aria_label(tip.clone())
+with: .aria_label(crate::ja_tip::faces(|| tip.clone()).name)
+
+# 場所の行のツールチップ(始めた人と、あなたの言葉)。写しが let を二度作るので、
+# 始めた人の文(rows::byline)もその中で作り直す。
+replace: byline.tip.clone()
+with: rows::byline(t).map_or_else(|| byline.tip.clone(), |b| b.tip)
+
+# 終わったスレッドの行(「Open … and the threads it started」)の題も二度作る。
+replace: let title = if starter.title.is_empty() {
+with: let ja_make_title = || if starter.title.is_empty() {
+replace: "Open {title} and the threads it started")
+with: "Open {title} and the threads it started", title = ja_make_title())
+
+# サブエージェントの行のツールチップ: 状態の文(rows::subagent_status_text)ごと二度作る。
+replace: let tip = {
+with: let ja_make_tip = || {
+replace: let shown_tip: SharedString =
+with: let shown_tip = crate::ja_tip::both(|| -> SharedString { let tip = ja_make_tip();
+replace: "{tip}. Click to read its transcript.").into();
+with: "{tip}. Click to read its transcript.").into() });
+
+# 休止のメニューと「起こす時」の欄の 4 つは core の定数(写しでも英語のまま)。core の
+# 表(sidebar.txt)の行を英語の字面で引く(shell.txt の ja_core_word と同じ)。
+replace: pub(crate) fn below(position: Point<Pixels>) -> Point<Pixels> {
+with: fn ja_core_word(en: &'static str) -> &'static str { threadbear_core::ja::TABLE.iter().find(|e| e.0 == en).map_or(en, threadbear_core::ja::t) } pub(crate) fn below(position: Point<Pixels>) -> Point<Pixels> {
+replace: rows::SNOOZE_UNTIL_RESTART,
+with: ja_core_word(rows::SNOOZE_UNTIL_RESTART),
+replace: rows::SNOOZE_PICK_TITLE,
+with: ja_core_word(rows::SNOOZE_PICK_TITLE),
+replace: rows::WAKE_MENU_TITLE,
+with: ja_core_word(rows::WAKE_MENU_TITLE),
+replace: .placeholder(rows::WAKE_PLACEHOLDER)
+with: .placeholder(ja_core_word(rows::WAKE_PLACEHOLDER))
+
+# 画面に出ない文(「表に無い」の一覧から外す)
+skip "up"  # キーの名前
+skip "down"  # 同上
+skip "escape"  # 同上
+skip "folder"  # 記号の名前
+skip "pencil"  # 同上
+skip "eye"  # 同上
+skip "star"  # 同上
+skip "trash"  # 同上
+skip "archivebox"  # 同上
+skip "number"  # 同上
+skip "calendar"  # 同上
+skip "tray"  # 同上
+skip "bolt"  # 同上
+skip "delete:{id}"  # 削除の途中の印の鍵
+skip "heading:{}"  # 見出しの動きの鍵
+skip "finished:{}"  # 行の動きの鍵
+skip "hover"  # 入力の記録の名前
+skip "hibernating"  # 一覧の節の鍵
+skip "running"  # 同上
+skip "failed"  # ランナーの移す仕事の状態の値
+skip "no such thread"  # 自動操作の答え(machine_menu_click)
+skip "no item {title}"  # 同上
+skip "{title} can't be picked"  # 同上
+skip "{title} does nothing"  # 同上
+skip "thread"  # 英語の複数形のための語。日本語の文は使わない({0:.0})
+skip "threads"  # 同上
+
+# 行の右クリックのメニュー
+"Move to Main Panel" = "メインのパネルに移す"
+"Open in New Panel" = "新しいパネルで開く"
+"Rename" = "名前を変える"
+"Remove Star" = "スターを外す"
+"Star" = "スターを付ける"
+"Hibernate" = "休止"
+"Wake" = "起こす"
+"Should Have Shown Me" = "見せてほしかった"
+"Unarchive" = "アーカイブから戻す"
+"Delete…" = "削除…"
+"Archive" = "アーカイブ"
+"Cancel Move" = "移すのをやめる"
+"{}, offline" = "{}(オフライン)"
+"Move to" = "移す先"
+"Copy thread id" = "スレッドの id をコピー"
+"Other…" = "ほかのフォルダ…"
+
+# 受信箱でアーカイブする時の問い(見る要があったか)
+"Didn't need this" = "見なくてよかった"
+"Glad I saw this" = "見てよかった"
+"Not sure" = "わからない"
+
+# マシンのチップのメニュー
+"This Mac" = "この Mac"
+"Move to {}" = "{} に移す"
+"Move to {}, offline" = "{} に移す(オフライン)"
+
+# 削除の確かめ
+"Delete \u{201C}{}\u{201D}?" = "「{}」を削除しますか?"
+"This removes the chat from Threadbear and moves it to the runner's trash. It can't be undone in the app." = "チャットを Threadbear から外し、ランナーのゴミ箱に移します。アプリでは元に戻せません。"
+"Delete" = "削除"
+"Deleting chat…" = "チャットを削除しています…"
+
+# 休止の時を決める窓
+"Hibernate until" = "いつまで休止するか"
+"Day to wake it" = "起こす日"
+"Time to wake it" = "起こす時刻"
+"That time has already gone. Pick a later one." = "その時刻はもう過ぎています。もっと後を選んでください。"
+
+# 一覧と見出し
+"No threads match." = "合うスレッドはありません。"
+"Nothing in the inbox." = "受信箱には何もありません。"
+"Search threads" = "スレッドを探す"
+"Start a new thread" = "新しいスレッドを始める"
+# {title} は節の題(core の inbox.rs が作り、今は英語)。
+"Show {title}" = "{title} を表示"
+"Hide {title}" = "{title} を隠す"
+"Sort: {}" = "並び順: {}"
+"{more} older archived {} not shown" = "表示していない古いアーカイブ済みのスレッドが {more} 件あります{0:.0}"
+"Show {step} more" = "さらに {step} 件を表示"
+
+# 行と行の上のツールチップ
+"Untitled" = "無題"
+tip "{}, in " = "{} の "  # 行のツールチップ(名前)の場所。一度しか作らないので英語のまま
+"On {runner}" = "{runner} の上"
+"Open {title} and the threads it started" = "「{title}」と、それが始めたスレッドを開く"
+"{place}, in {}" = "{place} の {}"
+"The last turn failed" = "前のターンが失敗しました"
+"Needs you" = "あなた待ち"
+
+# サブエージェントの行
+"1 tool call" = "ツール呼び出し 1 回"
+"{n} tool calls" = "ツール呼び出し {n} 回"
+"{tip}. Click to read its transcript." = "{tip}。クリックで会話を読む。"

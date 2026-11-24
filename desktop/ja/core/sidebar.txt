@@ -6,10 +6,13 @@
 # - 行の上のボタン(RowAction::tip)は &'static str のまま tipped! に届き、
 #   読み上げの名前(aria_label)と要素の id にもなるので tip にする。名前は英語、
 #   表示は表の置き場から日本語になる(desktop/ja/tip.rs の of_shared)。
-# - String にして渡すツールチップ(行の右の文の tip・場所の行・タイル)は、表の
-#   置き場が消えるので、日本語にすると名前も日本語になる。名前を英語に保つため
-#   tip にし、表示も英語のまま(updates.txt の launcher_button と同じ弱い所)。
-#   中で呼ぶ時刻や数の文も英語にする(下の english の replace)。
+# - 場所の行(place_tip・byline)とタイル(tile_help)のツールチップは、gpui の
+#   sidebar.txt が式を二度作る(英語の回が名前、日本語の回が表示)ので、普通の行。
+# - 行の右の文のツールチップ(Trailing の tip)は、構造体の String に入って、動きの
+#   ために覚えられてから描かれるので、二度作れない。日本語にすると名前も日本語に
+#   なるので tip にし、表示も英語のまま(updates.txt の launcher_button と同じ弱い所)。
+#   中で呼ぶ時刻や数の文も英語にする(下の english の replace)。仮想ランナーの
+#   マシンの行(box_trailing)も同じ。
 
 # 定数の中の文(曜日・月・休止のメニュー)は、写しでも英語のまま残る(const は
 # 差し替えない)。行は TABLE に入るので、使う所が英語の字面で引く(ja_word と、
@@ -163,14 +166,14 @@ tip "The last turn failed" = "前のターンが失敗しました"
 tip "Stopped when the runner restarted" = "ランナーの再起動で止まりました"
 
 # タイルと場所の行のツールチップ、誰が始めたか
-tip "Untitled project" = "無題のプロジェクト"
-tip "You: {asked}" = "あなた: {asked}"
-tip "Schedule" = "予定"
-tip "Started by another thread" = "別のスレッドが始めました"
-tip "Started by another thread: {f}" = "別のスレッドが始めました: {f}"
-tip "Started by the librarian" = "司書が始めました"
-tip "Started by the librarian, from: {f}" = "司書が始めました。元: {f}"
-tip "Started by {}" = "{} が始めました"
+"Untitled project" = "無題のプロジェクト"
+"You: {asked}" = "あなた: {asked}"
+"Schedule" = "予定"
+"Started by another thread" = "別のスレッドが始めました"
+"Started by another thread: {f}" = "別のスレッドが始めました: {f}"
+"Started by the librarian" = "司書が始めました"
+"Started by the librarian, from: {f}" = "司書が始めました。元: {f}"
+"Started by {}" = "{} が始めました"
 
 # アーカイブと休止の前に確かめる問い。日本語は {verb} を使わず {doing} で言う。
 "Archiving" = "アーカイブ"

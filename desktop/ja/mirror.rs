@@ -539,12 +539,13 @@ impl Mirror<'_> {
         self.child_mods(&text, &toks, path, &own_dir, &mut edits);
         include_paths(&text, &toks, path, &mut edits);
         let file = rel.display().to_string();
+        let mut notes: Vec<Note> = Vec::new();
         if let Some(mut table) = self.tables.remove(rel) {
             table.visited = true;
             self.translate(&text, &toks, &file, &mut table, &mut edits);
             if self.c.side == Side::Gpui {
                 let sinks = Sinks::find(&text, &toks, &table);
-                sinks.rewrite(&text, &toks, &file, &mut self.report, &mut edits);
+                notes = sinks.rewrite(&text, &toks, &mut edits);
             }
             self.made(&text, &toks, &mut table, &mut edits);
             self.tables.insert(rel.to_path_buf(), table);
@@ -560,7 +561,14 @@ impl Mirror<'_> {
         }
         let mut out = apply(&text, edits);
         if let Some(table) = self.tables.get(rel) {
-            out = rules(&out, table, &file, &mut self.report.errors);
+            let mut rewritten = std::collections::BTreeSet::new();
+            out = rules(&out, table, &file, &mut self.report.errors, &mut rewritten);
+            // A tooltip's let that the table's own replace: rewrites is the
+            // table's to make twice (settings_window.txt's accent dot).
+            notes.retain(|n| !rewritten.contains(&n.let_line));
+        }
+        for n in notes {
+            self.report.notes.push((file.clone(), n.line, n.why));
         }
         out
     }
@@ -780,7 +788,15 @@ impl Mirror<'_> {
 /// The table's `replace:` rules, on the copy's text. A rule that doesn't
 /// match as many times as it says stops the build: it's what puts a
 /// tooltip's or a word's Japanese where it's drawn.
-fn rules(text: &str, table: &Table, file: &str, errors: &mut Vec<String>) -> String {
+/// The lines a rule changed go in `rewritten` (a rule stays inside its line,
+/// so they're the original's lines too).
+fn rules(
+    text: &str,
+    table: &Table,
+    file: &str,
+    errors: &mut Vec<String>,
+    rewritten: &mut std::collections::BTreeSet<usize>,
+) -> String {
     let mut out = text.to_owned();
     for rule in &table.rules {
         let count = out.matches(rule.find.as_str()).count();
@@ -795,6 +811,9 @@ fn rules(text: &str, table: &Table, file: &str, errors: &mut Vec<String>) -> Str
                 rule.find
             ));
             continue;
+        }
+        for (at, _) in out.match_indices(rule.find.as_str()) {
+            rewritten.insert(out[..at].matches('\n').count() + 1);
         }
         out = out.replace(rule.find.as_str(), &rule.with);
     }
@@ -862,14 +881,9 @@ impl Sinks {
         sinks
     }
 
-    fn rewrite(
-        &self,
-        text: &str,
-        toks: &[Tok],
-        file: &str,
-        report: &mut Report,
-        edits: &mut Vec<Edit>,
-    ) {
+    /// Makes each tooltip twice, and says which it can't (`Note`).
+    fn rewrite(&self, text: &str, toks: &[Tok], edits: &mut Vec<Edit>) -> Vec<Note> {
+        let mut notes = Vec::new();
         for &(tip, open, close) in &self.calls {
             edits.push((
                 toks[tip].start,
@@ -887,6 +901,13 @@ impl Sinks {
                 Ok(Some(b)) if wrapped.contains(&b.let_at) => {}
                 Ok(Some(b)) => {
                     wrapped.push(b.let_at);
+                    if let Some((first, end)) = b.element {
+                        let start = toks[first].start;
+                        edits.push((start, start, "crate::ja_tip::both(|| ".to_owned()));
+                        let after = toks[end - 1].end;
+                        edits.push((after, after, ")".to_owned()));
+                        continue;
+                    }
                     let after = toks[b.eq].end;
                     edits.push((after, after, " crate::ja_tip::both(||".to_owned()));
                     let end = toks[b.semi].start;
@@ -896,9 +917,14 @@ impl Sinks {
                     };
                     edits.push((end, end, split));
                 }
-                Err(why) => report.notes.push((file.to_owned(), line, why)),
+                Err((let_at, why)) => notes.push(Note {
+                    line,
+                    let_line: text[..toks[let_at].start].matches('\n').count() + 1,
+                    why,
+                }),
             }
         }
+        notes
     }
 
     /// The `let` that gives the variable at `at` its value, when it can be
@@ -911,7 +937,7 @@ impl Sinks {
         toks: &[Tok],
         depth: &[usize],
         at: usize,
-    ) -> Result<Option<Binding>, String> {
+    ) -> Result<Option<Binding>, (usize, String)> {
         let name = toks[at].text(text);
         let mut lowest = depth[at];
         let mut k = at;
@@ -922,8 +948,23 @@ impl Sinks {
             if t.is_ident(text, "fn") {
                 return Ok(None);
             }
-            // `name: Type` in a closure's or a function's parameters.
-            if t.is_ident(text, name) && toks.get(k + 1).is_some_and(|n| n.is_punct(text, ":")) {
+            // `name: Type` in a closure's or a function's parameters, but not
+            // `let name: Type` or `let mut name: Type`: that's the let, below.
+            let after_let = |j: usize| j > 0 && toks[j - 1].is_ident(text, "let");
+            let in_let =
+                after_let(k) || (k > 0 && toks[k - 1].is_ident(text, "mut") && after_let(k - 1));
+            if t.is_ident(text, name)
+                && toks.get(k + 1).is_some_and(|n| n.is_punct(text, ":"))
+                && !in_let
+            {
+                return Ok(None);
+            }
+            // A closure's `|s, name|`, or what a match arm or an `if let`
+            // takes out (`Some(name) =>`), around `at`: handed on too.
+            if t.is_ident(text, name)
+                && ((closure_param(text, toks, k) && depth[k] <= lowest)
+                    || (taken_out(text, toks, k) && depth[k] <= lowest + 1))
+            {
                 return Ok(None);
             }
             if !t.is_ident(text, "let") || depth[k] > lowest {
@@ -934,7 +975,12 @@ impl Sinks {
             };
             let semi = (eq + 1..toks.len())
                 .find(|&j| toks[j].is_punct(text, ";") && depth[j] == depth[k])
-                .ok_or_else(|| format!("ツールチップの `{name}` の let の終わりが見つからない"))?;
+                .ok_or_else(|| {
+                    (
+                        k,
+                        format!("ツールチップの `{name}` の let の終わりが見つからない"),
+                    )
+                })?;
             // `let tip = other;` hands on a value made elsewhere: making it
             // twice changes nothing, and could move it twice.
             let init = &toks[eq + 1..semi];
@@ -944,18 +990,53 @@ impl Sinks {
             {
                 return Ok(None);
             }
-            if toks[k + 1..eq].iter().any(|t| t.is_punct(text, ":")) {
-                return Err(format!(
-                    "ツールチップの `{name}` の let に型があるので、二度は作らない(表示は作った時の言語)"
+            if let Some(colon) = (k + 1..eq).find(|&j| toks[j].is_punct(text, ":")) {
+                // A `&str` (a table's `&'static str`) finds its faces by its
+                // address, as a parameter does.
+                let ty = match position {
+                    Some((place, _)) => tuple_items(text, toks, colon + 1, eq).get(place).copied(),
+                    None => Some((colon + 1, eq)),
+                };
+                if ty.is_some_and(|(a, b)| is_str_ref(text, &toks[a..b])) {
+                    return Ok(None);
+                }
+                return Err((
+                    k,
+                    format!(
+                        "ツールチップの `{name}` の let に型があるので、二度は作らない(表示は作った時の言語)"
+                    ),
                 ));
             }
+            // A tuple of three or more: its element is made twice when the
+            // tuple is written out, `(a, format!(…), b)`.
+            let (position, element) = match position {
+                Some((place, size)) if size > 2 => {
+                    match tuple_items(text, toks, eq + 1, semi).get(place) {
+                        Some(&item) if tuple_items(text, toks, eq + 1, semi).len() == size => {
+                            (None, Some(item))
+                        }
+                        _ => {
+                            return Err((
+                                k,
+                                format!(
+                                    "ツールチップの `{name}` が 3 つ以上の組の let にあるので、二度は作らない(表示は作った時の言語)"
+                                ),
+                            ))
+                        }
+                    }
+                }
+                other => (other.map(|(place, _)| place), None),
+            };
             let jumps = ["return", "break", "continue", "await"];
             if toks[eq + 1..semi]
                 .iter()
                 .any(|t| jumps.iter().any(|j| t.is_ident(text, j)) || t.is_punct(text, "?"))
             {
-                return Err(format!(
-                    "ツールチップの `{name}` を作る式が途中で抜けるので、二度は作らない(表示は作った時の言語)"
+                return Err((
+                    k,
+                    format!(
+                        "ツールチップの `{name}` を作る式が途中で抜けるので、二度は作らない(表示は作った時の言語)"
+                    ),
                 ));
             }
             // Every later use in the let's block is a tooltip's, up to a
@@ -976,8 +1057,11 @@ impl Sinks {
                     && !(j > 0 && toks[j - 1].is_punct(text, "."))
                     && !self.idents.contains(&j);
                 if used {
-                    return Err(format!(
-                        "ツールチップの `{name}` がほかにも使われるので、二度は作らない(表示は作った時の言語)"
+                    return Err((
+                        k,
+                        format!(
+                            "ツールチップの `{name}` がほかにも使われるので、二度は作らない(表示は作った時の言語)"
+                        ),
                     ));
                 }
                 j += 1;
@@ -987,10 +1071,19 @@ impl Sinks {
                 eq,
                 semi,
                 position,
+                element,
             }));
         }
         Ok(None)
     }
+}
+
+/// A tooltip that can't be made twice: where it's used, the line of the
+/// `let` that makes it, and why.
+struct Note {
+    line: usize,
+    let_line: usize,
+    why: String,
 }
 
 struct Binding {
@@ -999,11 +1092,19 @@ struct Binding {
     semi: usize,
     /// Which of a pair `let (a, b)` the variable is.
     position: Option<usize>,
+    /// In a longer tuple written out, the tokens of the variable's element.
+    element: Option<(usize, usize)>,
 }
 
 /// Whether `let` at `k` binds `name`: `let name =`, `let mut name =`, or one
-/// of `let (a, b) =`. Its place in a pair, and the `=`.
-fn pattern(text: &str, toks: &[Tok], k: usize, name: &str) -> Option<(Option<usize>, usize)> {
+/// of a tuple's, `let (a, b) =`. Its place in the tuple and the tuple's size,
+/// and the `=`.
+fn pattern(
+    text: &str,
+    toks: &[Tok],
+    k: usize,
+    name: &str,
+) -> Option<(Option<(usize, usize)>, usize)> {
     let eq = (k + 1..toks.len()).find(|&j| {
         toks[j].is_punct(text, "=")
             || toks[j].is_punct(text, ";")
@@ -1018,12 +1119,74 @@ fn pattern(text: &str, toks: &[Tok], k: usize, name: &str) -> Option<(Option<usi
         .filter(|t| t.kind == Kind::Ident && !t.is_ident(text, "mut"))
         .map(|t| t.text(text))
         .collect();
-    let pair = toks[k + 1].kind == Kind::Open('(');
-    match (pair, names.as_slice()) {
+    let tuple = toks[k + 1].kind == Kind::Open('(');
+    match (tuple, names.as_slice()) {
         (false, [only]) if *only == name => Some((None, eq)),
-        (true, [a, b]) if *a == name || *b == name => Some((Some(usize::from(*b == name)), eq)),
+        (true, all) if all.len() >= 2 => all
+            .iter()
+            .position(|n| *n == name)
+            .map(|place| (Some((place, all.len())), eq)),
         _ => None,
     }
+}
+
+/// The items of a tuple that is all of `start..end` (`(a, b, c)`), as token
+/// ranges; none when it isn't one.
+fn tuple_items(text: &str, toks: &[Tok], start: usize, end: usize) -> Vec<(usize, usize)> {
+    match (start < end).then(|| matching(toks, start)).flatten() {
+        Some(close) if toks[start].kind == Kind::Open('(') && close + 1 == end => {
+            args(text, toks, start, close)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// `&str` or `&'static str`.
+fn is_str_ref(text: &str, ty: &[Tok]) -> bool {
+    match ty {
+        [amp, s] => amp.is_punct(text, "&") && s.is_ident(text, "str"),
+        [amp, life, s] => {
+            amp.is_punct(text, "&") && life.kind == Kind::Lifetime && s.is_ident(text, "str")
+        }
+        _ => false,
+    }
+}
+
+/// Whether the token at `k` is one of a closure's parameters: `|s, name|`.
+fn closure_param(text: &str, toks: &[Tok], k: usize) -> bool {
+    let bar = |j: usize| toks[j].is_punct(text, "|");
+    let between = |j: usize| toks[j].kind == Kind::Ident || toks[j].is_punct(text, ",");
+    let before = (0..k).rev().find(|&j| !between(j));
+    let after = (k + 1..toks.len()).find(|&j| !between(j));
+    match (before, after) {
+        // Not `a | name | b`: the bar that opens the parameters follows
+        // what can't end an expression (`(`, `,`, `=`, `move`).
+        (Some(b), Some(a)) if bar(b) && bar(a) => {
+            b == 0 || {
+                let p = &toks[b - 1];
+                matches!(p.kind, Kind::Open(_))
+                    || p.is_punct(text, ",")
+                    || p.is_punct(text, "=")
+                    || p.is_ident(text, "move")
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Whether the token at `k` is what a match arm or an `if let` takes out of
+/// a variant: `Some(name) =>`, `Some(name) if …`, `if let Some(name) =`.
+fn taken_out(text: &str, toks: &[Tok], k: usize) -> bool {
+    k >= 2
+        && toks[k - 1].kind == Kind::Open('(')
+        && toks[k - 2].kind == Kind::Ident
+        && toks.get(k + 1).is_some_and(|t| t.kind == Kind::Close(')'))
+        && toks.get(k + 2).is_some_and(|t| {
+            t.is_punct(text, "=>")
+                || t.is_punct(text, "=")
+                || t.is_punct(text, "|")
+                || t.is_ident(text, "if")
+        })
 }
 
 /// Each token's depth in brackets of any kind.
@@ -2055,6 +2218,77 @@ mod tests {
         assert!(c.text.contains("e.ja_tip("), "{}", c.text);
         assert!(!c.text.contains("both"), "{}", c.text);
         assert!(c.report.notes.is_empty(), "{:?}", c.report.notes);
+    }
+
+    #[test]
+    fn a_tooltip_let_with_a_type_is_noted_not_taken_for_a_parameter() {
+        let src = "fn f(e: E, p: &str) -> E {\n    let tip: String = format!(\"In {p}\");\n    let mut other: String = format!(\"In {p}\");\n    e.tip(tip).tip(other)\n}\n";
+        let c = copy_as(
+            Side::Gpui,
+            src,
+            "tip-method: tip\n\"In {p}\" = \"{p} の中\"\n",
+        );
+        assert!(!c.text.contains("crate::ja_tip::both"), "{}", c.text);
+        assert_eq!(c.report.notes.len(), 2, "{:?}", c.report.notes);
+        assert!(
+            c.report.notes.iter().all(|n| n.2.contains("型がある")),
+            "{:?}",
+            c.report.notes
+        );
+    }
+
+    #[test]
+    fn a_closure_s_or_a_pattern_s_tooltip_is_handed_on_not_an_earlier_let() {
+        // Each `tip` here is a value handed on (a closure's parameter, what a
+        // match arm takes out), not the `let tip` above them.
+        let src = "fn f(e: E, j: Option<String>, k: Option<String>) -> E {\n    let tip = format!(\"In {p}\");\n    let e = e.aria_label(tip.clone()).tip(tip);\n    let e = e.when_some(j, |s, tip| s.tip(tip));\n    match k {\n        Some(tip) if ok => e.tip(tip),\n        Some(tip) => e.tip(tip),\n        None => e,\n    }\n}\n";
+        let c = copy_as(
+            Side::Gpui,
+            src,
+            "tip-method: tip\n\"In {p}\" = \"{p} の中\"\n",
+        );
+        let lines: Vec<usize> = c.report.notes.iter().map(|n| n.1).collect();
+        assert_eq!(lines, [3], "{:?}", c.report.notes);
+    }
+
+    #[test]
+    fn a_tooltip_from_a_longer_tuple_has_its_element_made_twice() {
+        let table = "tip-macro: tipped! 2\n\"In {p}\" = \"{p} の中\"\n";
+        let src = "fn f(e: E) -> E {\n    let tip = format!(\"In {p}\");\n    let (a, tip, b) = (1, format!(\"In {p}\"), 2);\n    tipped!(e, tip)\n}\n";
+        let c = copy_as(Side::Gpui, src, table);
+        assert!(c.report.notes.is_empty(), "{:?}", c.report.notes);
+        assert!(
+            c.text.contains("let (a, tip, b) = (1, crate::ja_tip::both(|| threadbear_core::ja_format!(\"{p} の中\", \"In {p}\")), 2);"),
+            "{}",
+            c.text
+        );
+        // Made by a match, its element can't be reached: noted.
+        let src = "fn f(e: E) -> E {\n    let (a, tip, b) = match x { _ => (1, format!(\"In {p}\"), 2) };\n    tipped!(e, tip)\n}\n";
+        let c = copy_as(Side::Gpui, src, table);
+        assert_eq!(c.report.notes.len(), 1, "{:?}", c.report.notes);
+        assert!(
+            c.report.notes[0].2.contains("3 つ以上"),
+            "{:?}",
+            c.report.notes
+        );
+        // A `&str` (a table's literal) finds its faces by its address.
+        let src = "fn f(e: E) -> E {\n    let (a, tip, b): (u8, &str, u8) = match x { _ => (1, \"In\", 2) };\n    let one: &'static str = \"In\";\n    tipped!(e, tip).tip(one)\n}\n";
+        let c = copy_as(Side::Gpui, src, &format!("{table}tip-method: tip\n"));
+        assert!(c.report.notes.is_empty(), "{:?}", c.report.notes);
+    }
+
+    #[test]
+    fn a_let_the_table_rewrites_itself_isnt_noted() {
+        let src = "fn f(e: E, p: &str) -> E {\n    let tip: String = format!(\"In {p}\");\n    e.tip(tip)\n}\n";
+        let table = "tip-method: tip\n\"In {p}\" = \"{p} の中\"\n";
+        assert_eq!(copy_as(Side::Gpui, src, table).report.notes.len(), 1);
+        let c = copy_as(
+            Side::Gpui,
+            src,
+            &format!("{table}replace: let tip: String =\nwith: let tip = crate::ja_tip::both(|| -> String {{ 0 }}); let _: String =\n"),
+        );
+        assert!(c.report.notes.is_empty(), "{:?}", c.report.notes);
+        assert!(c.report.errors.is_empty(), "{:?}", c.report.errors);
     }
 
     #[test]

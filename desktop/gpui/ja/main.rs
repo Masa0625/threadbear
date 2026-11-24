@@ -22,6 +22,11 @@ include!(concat!(env!("OUT_DIR"), "/ja/main.rs"));
 #[path = "../../ja/language.rs"]
 mod ja_language;
 
+// Mac のメニューバーの題を日本語に書き換える前の照らし合わせ(写しの表が shell.rs に差す)。
+#[cfg(any(target_os = "macos", test))]
+#[path = "../../ja/menu.rs"]
+mod ja_menu;
+
 // コンパイルされない。cargo fmt がここから src/ を整える(根が src/main.rs
 // だった時と同じに)。
 #[cfg(any())]

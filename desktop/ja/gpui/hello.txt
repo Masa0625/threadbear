@@ -10,6 +10,11 @@ tip-method: tip
 replace: Some("Recommended") => {
 with: Some(tag) if threadbear_core::ja::entry_of(tag, &crate::ja_table::TABLE).map_or(tag, |e| e.0) == "Recommended" => {
 
+# 見た目の選びの名前(style.rs の Appearance::title、style.txt で日本語)は、英語の
+# 時だけ小文字にする(「Use the light look」)。日本語の名前は「」に入れてそのまま。
+replace: choice.title().to_lowercase()
+with: { let title = choice.title(); if threadbear_core::ja::on() { title.to_owned() } else { title.to_lowercase() } }
+
 # 画面に出ない文(「表に無い」の一覧から外す)
 skip "claude"  # プロバイダーの id と記号の名前
 skip "Claude Code"  # 製品の名前(ログインの題。ターミナルの英語のサインインの文にも入る)
@@ -92,5 +97,5 @@ tip "Stop your Mac sleeping on its own while a thread is working" = "スレッ�
 "Opens Connectors once you're done here" = "ここが済んだらコネクタを開く"
 "Connectors" = "コネクタ"
 "Notion, Gmail, Sentry and more" = "Notion、Gmail、Sentry など"
-"Use the {} look" = "{} の見た目にする"
+"Use the {} look" = "見た目を「{}」にする"
 "Look" = "見た目"

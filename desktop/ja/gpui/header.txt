@@ -129,8 +129,8 @@ tip "Anyone with the link" = "リンクを知っている人"
 "Lost the connection to the runner." = "ランナーとのつながりが切れました。"
 "The runner didn't answer in time." = "ランナーが時間内に答えませんでした。"
 "this thread" = "このスレッド"
-"{what} Your message to {name} hasn't shown up there, so it's back in its box. It may still arrive: look before sending it again." = "{what}{name}へのメッセージがスレッドに出ていないので、箱に戻しました。まだ届くかもしれないので、送り直す前に確かめてください。"
-"{what} Your message to {name} wasn't sent. It's back in its box." = "{what}{name}へのメッセージは送られませんでした。箱に戻しました。"
+"{what} Your message to {name} hasn't shown up there, so it's back in its box. It may still arrive: look before sending it again." = "{what}{name} へのメッセージがスレッドに出ていないので、箱に戻しました。まだ届くかもしれないので、送り直す前に確かめてください。"
+"{what} Your message to {name} wasn't sent. It's back in its box." = "{what}{name} へのメッセージは送られませんでした。箱に戻しました。"
 
 # アーカイブと受信箱の終わり
 "Open this thread" = "このスレッドを開く"

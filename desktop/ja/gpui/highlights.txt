@@ -7,15 +7,23 @@
 # 渡す別のファイルの helper がコンパイルできなくなる。だから tipped に渡る文は
 # tip にする(名前も表示も英語)。
 
-# PaneRow のツールチップは、このファイルの中でしか付けない。受ける型を揃えて表の
-# 置き場を保つ(desktop/ja/tip.rs の keep)。描く所の wrapper.tip(tip) で、名前は
-# 英語・表示は日本語になる。format! の文は置き場が無いので tip にする。
+# PaneRow のツールチップは、このファイルの中でしか付けない。名前と表示の 2 つの
+# 顔(desktop/ja/tip.rs の Faces)で持つ。表の literal は置き場から、二度作った文
+# (faces・both)はその 2 つから、名前は英語・表示は日本語になる。ほかの format! の
+# 文は一度しか作らないので tip にする。
 replace: pub tip: Option<String>,
-with: pub tip: Option<SharedString>,
+with: pub tip: Option<crate::ja_tip::Faces>,
 replace: pub(crate) fn tip(mut self, tip: impl Into<String>) -> Self {
-with: pub(crate) fn tip(mut self, tip: impl Into<SharedString> + AsRef<str>) -> Self {
+with: pub(crate) fn tip(mut self, tip: impl crate::ja_tip::IntoFaces) -> Self {
 replace: self.tip = Some(tip.into());
-with: self.tip = Some(crate::ja_tip::keep(tip));
+with: self.tip = Some(crate::ja_tip::IntoFaces::into_faces(tip));
+replace: wrapper = wrapper.tip(tip);
+with: wrapper = wrapper.ja_tip(tip);
+# サブエージェントの行: 状態の文(core の subagent_status_text)ごと二度作る。
+replace: .tip(threadbear_core::ja_format!("{}。クリックで会話を読む。",
+with: .tip(crate::ja_tip::faces(|| threadbear_core::ja_format!("{}。クリックで会話を読む。",
+replace: side::subagent_status_text(s)
+with: side::subagent_status_text(s))
 
 # 見出し(Heading.title)とパネルの名前(section_title)は String で、畳む所の
 # ツールチップ("Show {title}")と Back to のツールチップ(どちらも tipped の名前)に
@@ -77,7 +85,7 @@ tip "Back to {back_to}" = "{back_to} に戻る"
 "Open this thread" = "このスレッドを開く"
 "Open in its app" = "そのアプリで開く"
 tip "Open {address}" = "{address} を開く"
-tip "{}. Click to read its transcript." = "{}。クリックで会話を読む。"
+"{}. Click to read its transcript." = "{}。クリックで会話を読む。"
 # やる事の印(tipped。名前なので英語)
 tip "Done" = "済んだ"
 tip "Not done" = "まだ"

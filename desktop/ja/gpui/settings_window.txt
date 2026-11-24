@@ -50,7 +50,7 @@ with: .aria_label(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&tip)).name
 replace: let tip: SharedString = match choice {
 with: let tip = { crate::ja_tip::both(|| -> SharedString { match choice {
 replace: _ => format!("Use {} as the accent", choice.title()).into(),
-with: _ => threadbear_core::ja_format!("{} をアクセントにする", "Use {} as the accent", choice.title()).into(), } })
+with: _ => threadbear_core::ja_format!("{}をアクセントにする", "Use {} as the accent", choice.title()).into(), } })
 
 # switch と menu は文を String に写して渡すので、表の置き場が消える。英語の文を
 # 名前に、日本語を表示にした ja::made の答えにして渡す(made_shown で引ける)。
@@ -146,7 +146,7 @@ tip "Always dark, whatever the system is set to" = "システムの設定にか�
 "Use the Mac's accent colour" = "Mac のアクセントカラーを使う"
 "Use blue, the usual accent" = "いつものアクセントの青を使う"
 # 名前は英語のまま。表示は上の replace: が作る(同じ日本語)。
-tip "Use {} as the accent" = "{} をアクセントにする"
+tip "Use {} as the accent" = "{}をアクセントにする"
 "Spacing" = "間隔"
 tip "Roomy" = "ゆったり"
 tip "More room between rows and turns" = "行とターンの間を広く"

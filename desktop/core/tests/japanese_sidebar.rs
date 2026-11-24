@@ -9,6 +9,7 @@ use serde_json::json;
 use threadbear_core::chrono::{DateTime, FixedOffset};
 use threadbear_core::inbox::{BackgroundTask, ThreadSummary};
 use threadbear_core::ja;
+use threadbear_core::open_anything;
 use threadbear_core::remote::{RunnerBox, TokenNeed};
 use threadbear_core::sidebar::{self as rows, RowAction, RowLook, RowMode, Subagent, TrailingKind};
 
@@ -187,6 +188,35 @@ fn the_words_a_row_draws_are_japanese() {
     );
 }
 
+/// Code that reads relative_short's "now" to say "just now" reads its
+/// Japanese too (desktop/ja/core/open_anything.txt, projects.txt).
+#[test]
+fn words_that_turn_now_into_just_now_still_do_in_japanese() {
+    ja::set_japanese(true);
+    let now = at("2026-11-09T20:00:00+11:00");
+    assert_eq!(
+        threadbear_core::projects::ago(ms("2026-11-09T19:59:40+11:00"), &now),
+        "たった今"
+    );
+    assert_eq!(
+        threadbear_core::projects::ago(ms("2026-11-09T19:55:00+11:00"), &now),
+        "5 分前"
+    );
+    let fresh = thread(json!({ "id": "fresh", "lastActivityAt": "2026-11-09T08:59:40Z" }));
+    let older = thread(json!({ "id": "older", "lastActivityAt": "2026-11-09T08:55:00Z" }));
+    let catalog = open_anything::Catalog::new([&fresh, &older], &[], Vec::new(), &[], &now);
+    let detail = |t: &ThreadSummary| {
+        catalog
+            .find(&open_anything::thread_key(&t.id))
+            .map(|item| item.detail)
+    };
+    assert_eq!(
+        detail(&fresh),
+        Some(format!("{} · たった今", fresh.place()))
+    );
+    assert_eq!(detail(&older), Some(format!("{} · 5 分", older.place())));
+}
+
 #[test]
 fn a_person_s_and_a_runner_s_words_stay_as_they_are() {
     ja::set_japanese(true);
@@ -309,14 +339,27 @@ fn the_words_that_name_a_tooltip_stay_english() {
         rows::background_detail(&tasks(&[("agent", "", false), ("shell", "npm test", true)])),
         "1 sub-agent\nnpm test (finished)"
     );
+    // The place line's and the tile's are made twice where they're drawn
+    // (desktop/ja/gpui/sidebar.txt): in English for the name, and in Japanese.
     let started = thread(
         json!({ "asked": "Fix it", "startedBy": { "kind": "thread", "label": "x", "threadTitle": "Nightly" } }),
     );
-    assert_eq!(rows::place_tip(&started), "You: Fix it");
+    assert_eq!(ja::english(|| rows::place_tip(&started)), "You: Fix it");
+    assert_eq!(rows::place_tip(&started), "あなた: Fix it");
     assert_eq!(
-        rows::byline(&started).map(|b| b.tip).as_deref(),
+        ja::english(|| rows::byline(&started).map(|b| b.tip)).as_deref(),
         Some("Started by another thread: Nightly")
     );
+    assert_eq!(
+        rows::byline(&started).map(|b| b.tip).as_deref(),
+        Some("別のスレッドが始めました: Nightly")
+    );
+    let untitled = thread(json!({ "projects": [{ "id": "p1", "title": "" }] }));
+    assert_eq!(
+        ja::english(|| rows::tile_help(&untitled)),
+        "Untitled project"
+    );
+    assert_eq!(rows::tile_help(&untitled), "無題のプロジェクト");
     let needs = RunnerBox {
         state: "needsToken".into(),
         token: Some(TokenNeed::None),

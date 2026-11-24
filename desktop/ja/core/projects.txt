@@ -1,0 +1,10 @@
+# core/src/projects.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
+# 今は、どれだけ前かの文(ago)だけ。ほかの文はまだ英語。
+
+# 時の文は core の sidebar.rs の relative_short が作り、日本語の時は「今」。英語の
+# "now" と比べると日本語では当たらず「今 ago」になるので、同じ表の行の今の言語の
+# 字と比べる。
+replace: short if short == "now" =>
+with: short if short == crate::ja::TABLE.iter().find(|e| e.0 == "now").map_or("now", crate::ja::t) =>
+"just now" = "たった今"
+"{short} ago" = "{short}前"
