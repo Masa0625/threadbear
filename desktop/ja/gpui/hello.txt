@@ -1,0 +1,96 @@
+# gpui/src/hello.rs の画面の文(書き方は desktop/ja/mirror.rs の parse_table)。
+# 初めて立ち上げた時の設定のカード。カードの題と本文と主なボタンの文は core の
+# hello.rs(threadbear_core::hello の Card)が作るので、ここには無い。
+
+# ツールチップを作る所: link と switch と見た目の選びの .tip(…)。
+tip-method: tip
+
+# 「おすすめ」の印は、渡された札を "Recommended" と比べて星を付ける。日本語の
+# 札でも星になるように、表の置き場から英語に戻して比べる。
+replace: Some("Recommended") => {
+with: Some(tag) if threadbear_core::ja::entry_of(tag, &crate::ja_table::TABLE).map_or(tag, |e| e.0) == "Recommended" => {
+
+# 画面に出ない文(「表に無い」の一覧から外す)
+skip "claude"  # プロバイダーの id と記号の名前
+skip "Claude Code"  # 製品の名前(ログインの題。ターミナルの英語のサインインの文にも入る)
+skip "another Claude login"  # ターミナルの英語のサインインの文に入る(core の sign_in.rs が書く)
+skip "accounts"  # ランナーのフォルダの名前
+skip "gh"  # コマンドの名前
+skip "auth"  # コマンドの引数
+skip "status"  # 同上
+skip "plus"  # 記号の名前
+skip "folder"  # 同上
+skip "link"  # 同上
+skip "iphone"  # 同上
+skip "checkmark"  # 同上
+skip "moon"  # 同上
+skip "powerplug"  # 同上
+skip "Threadbear for iPhone"  # アプリの名前
+
+# カードの下の並び
+"← Back" = "← 戻る"
+"The card before" = "前のカード"
+"Skip" = "飛ばす"
+"Leave this for now; Finish setting up keeps what's left" = "今は飛ばします。残りは「セットアップを仕上げる」に残ります"
+"Later" = "後で"
+"Done: start a new thread (Return)" = "完了: 新しいスレッドを始める(Return)"
+"On to the next card (Return)" = "次のカードへ(Return)"
+
+# エージェント
+"Couldn't make a folder for another login: {e}" = "別のログインのフォルダを作れませんでした: {e}"
+"Waiting" = "待機中"
+"Sign in…" = "サインイン…"
+"Finish signing in in Terminal and your browser" = "ターミナルとブラウザでサインインを済ませてください"
+"Opens Terminal to sign in, then makes it last a year" = "ターミナルを開いてサインインし、1 年もつようにする"
+"Opens Terminal on this login's own sign-in" = "このログインのサインインをターミナルで開く"
+"Opens Terminal to sign in to Claude Code, then makes it last a year" = "ターミナルを開いて Claude Code にサインインし、1 年もつようにする"
+"Signed in" = "サインイン済み"
+"Not signed in on this Mac" = "この Mac ではサインインしていません"
+"Add" = "足す"
+"Sign in to another Claude account in Terminal, for a year" = "ターミナルで別の Claude のアカウントに 1 年分サインインする"
+"Finish in Terminal and your browser" = "ターミナルとブラウザで済ませてください"
+"A thread moves to it when one runs low" = "片方が残り少なくなると、スレッドがこちらに移ります"
+"Another Claude login" = "別の Claude のログイン"
+
+# スレッドが始まる所
+"Choose" = "選ぶ"
+"Change…" = "変える…"
+"Pick the folder new threads start in" = "新しいスレッドが始まるフォルダを選ぶ"
+"Your threads folder" = "スレッドのフォルダ"
+"Or pick another as you start a thread" = "スレッドを始める時に別のフォルダも選べます"
+"Looking…" = "確かめています…"
+"Not signed in; agents still commit on this Mac" = "サインインしていません。エージェントはこの Mac で commit します"
+"As {who}, for pull requests" = "{who} として、pull request に使います"
+
+# iPhone
+"Paired just now" = "今ペアリングしました"
+"Paired already" = "ペアリング済みです"
+"Paired" = "ペアリング済み"
+"No code" = "コードがありません"
+"Couldn't make a code: {e}" = "コードを作れませんでした: {e}"
+"Waiting for your phone" = "iPhone を待っています"
+"Scan it with" = "読み取るアプリ:"
+"No app yet?" = "アプリがまだ無い時は"
+"Get it on the App Store" = "App Store で入手"
+"The iPhone app's page" = "iPhone のアプリのページ"
+"Or" = "または"
+"opening…" = "開いています…"
+"open your threads in a browser" = "ブラウザでスレッドを開く"
+"Opens your Threadbear website, signed in" = "サインインした状態で、Threadbear の Web サイトを開く"
+
+# 入れておくと良い物。スイッチのツールチップは読み上げの名前(aria_label)と、
+# 自動操作が押す名前を兼ねるので tip(描く所の .tip が日本語にする)。
+tip "Have another lab check each code change a thread makes" = "スレッドのコードの変更を、毎回別のラボに確かめてもらう"
+"Review by another lab" = "別のラボのレビュー"
+"Recommended" = "おすすめ"
+"Codex checks Claude's code changes, and the other way round" = "Codex が Claude のコードの変更を確かめ、その逆も行います"
+tip "Stop your Mac sleeping on its own while a thread is working" = "スレッドが作業している間、Mac がひとりでにスリープしないようにする"
+"Keep the Mac awake" = "Mac を起こしておく"
+"So a long thread isn't cut off halfway" = "長いスレッドが途中で切れないように"
+"Opens next" = "次に開く"
+"Show me" = "見る"
+"Opens Connectors once you're done here" = "ここが済んだらコネクタを開く"
+"Connectors" = "コネクタ"
+"Notion, Gmail, Sentry and more" = "Notion、Gmail、Sentry など"
+"Use the {} look" = "{} の見た目にする"
+"Look" = "見た目"

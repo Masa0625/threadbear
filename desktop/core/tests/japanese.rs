@@ -45,7 +45,7 @@ fn the_words_drawn_are_japanese() {
     let mike = from_mike(json!({}));
     assert_eq!(
         updates::upstream_line(mike.upstream.as_ref()).as_deref(),
-        Some("Mike の 11月6日 のリリースには、新しい変更 12 件 があります。")
+        Some("Mike の11月6日のリリースには、新しい変更 12 件があります。")
     );
     let settling = updates::AppSide {
         settling: true,
@@ -54,7 +54,7 @@ fn the_words_drawn_are_japanese() {
     };
     assert_eq!(
         updates::app_line(&settling),
-        "main にアプリの新しい版があります。ビルドの前に 静かな 2 分 を待っています。"
+        "main にアプリの新しい版があります。ビルドの前に静かな 2 分を待っています。"
     );
     let failed = runner(json!({ "state": "failed", "commit": "abc1234", "oldRunners": [] }));
     assert_eq!(
