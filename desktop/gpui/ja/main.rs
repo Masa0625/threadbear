@@ -18,6 +18,10 @@
 )]
 include!(concat!(env!("OUT_DIR"), "/ja/main.rs"));
 
+// 設定 › 一般 › 見た目 の「言語」の行(写しの表が settings_window.rs に差す)。
+#[path = "../../ja/language.rs"]
+mod ja_language;
+
 // コンパイルされない。cargo fmt がここから src/ を整える(根が src/main.rs
 // だった時と同じに)。
 #[cfg(any())]

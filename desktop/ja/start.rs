@@ -38,7 +38,7 @@ fn language_in(data: &[u8]) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn system_is_japanese() -> bool {
+pub(crate) fn system_is_japanese() -> bool {
     let languages = objc2_foundation::NSLocale::preferredLanguages();
     languages
         .firstObject()
@@ -46,7 +46,7 @@ fn system_is_japanese() -> bool {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn system_is_japanese() -> bool {
+pub(crate) fn system_is_japanese() -> bool {
     ["LC_ALL", "LC_MESSAGES", "LANG"]
         .iter()
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
