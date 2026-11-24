@@ -481,7 +481,7 @@ impl Mirror<'_> {
 
     fn translate(&mut self, text: &str, toks: &[Tok], rel: &Path, table: &mut Table, edits: &mut Vec<(usize, usize, String)>) {
         let file = rel.display().to_string();
-        let index: BTreeMap<&str, usize> = table.entries.iter().enumerate().map(|(i, e)| (e.en.as_str(), i)).collect();
+        let index: BTreeMap<String, usize> = table.entries.iter().enumerate().map(|(i, e)| (e.en.clone(), i)).collect();
         let mut walk = Walk::default();
         for (i, t) in toks.iter().enumerate() {
             walk.step(text, toks, i);
@@ -496,7 +496,7 @@ impl Mirror<'_> {
             let line = text[..t.start].matches('\n').count() + 1;
             let ctx = walk.context(text, toks, i);
             let Some(&ei) = index.get(content) else {
-                if ctx.ui && looks_like_ui(content) {
+                if ctx.ui && ctx.keep.is_none() && looks_like_ui(content) {
                     self.report.missing.push((file.clone(), line, content.to_owned()));
                 }
                 continue;
@@ -977,9 +977,10 @@ impl Walk {
                     self.test_next = false;
                 }
                 if attr {
-                    // #[cfg(test)] / #[test]
-                    let body: String = toks[i + 1..].iter().take(4).map(|t| t.text(text)).collect();
-                    if body.starts_with("cfg(test)") || body.starts_with("test]") {
+                    // #[cfg(test)]・#[test]・#[cfg(feature = "automation")](自動操作の
+                    // build だけの物。そこではいつも英語)。
+                    let body: String = toks[i + 1..].iter().take(6).map(|t| t.text(text)).collect();
+                    if body.starts_with("cfg(test)") || body.starts_with("test]") || body.starts_with("cfg(feature=\"automation\")") {
                         self.test_next = true;
                     }
                 }
