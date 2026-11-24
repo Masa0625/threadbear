@@ -1,37 +1,128 @@
-// 画面の文の言語(`threadbear_core::ja`)。desktop/ja/README.md。
+// The language of the screen's words (`threadbear_core::ja`), desktop/ja/README.md.
 //
-// 既定は英語。日本語になるのは、app が立ち上がる時に `set_japanese(true)` を
-// 呼んだ時だけ(desktop/ja/start.rs)。試験は app を立ち上げないので、いつも英語。
+// English unless the app turns Japanese on as it starts (desktop/ja/start.rs).
+// Tests never start the app, so they run in English.
 //
-// 写し(desktop/ja/mirror.rs)が、表にある literal を `t("英語", "日本語")` に、
-// `format!("英語", …)` を `ja_format!("日本語", "英語", …)` に差し替える。
-// ツールチップの文は記録と自動操作の名前を兼ねるので英語のまま渡り、描く所で
-// `draw` が訳す。
-use std::borrow::Cow;
+// The mirror (desktop/ja/mirror.rs) puts `t(&TABLE[i])` where a table's literal
+// was and `ja_format!("日本語", "English", ...)` where its `format!` was, with
+// the arguments as they were. Both answer English inside `english(...)`: a
+// tooltip is made twice, once in English for its name (what the activity log
+// and the scripts know a control by) and once for the words it shows.
+use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static JAPANESE: AtomicBool = AtomicBool::new(false);
 
-/// 画面の文を日本語にするか。app の立ち上げで 1 回だけ呼ぶ。
+thread_local! {
+    /// How many `english` calls this thread is inside.
+    static ENGLISH: Cell<u32> = const { Cell::new(0) };
+    /// The language for this thread alone (a test's), over the app's.
+    static HERE: Cell<Option<bool>> = const { Cell::new(None) };
+    /// The last answer of each `made` producer: (producer, English, Japanese).
+    static MADE: RefCell<Vec<(&'static str, String, String)>> = const { RefCell::new(Vec::new()) };
+}
+
+// `pub static TABLE: [(&str, &str); N]`, written by the build script from
+// desktop/ja/core/: (English, Japanese), each the literal's text as written.
+include!(concat!(env!("OUT_DIR"), "/ja/table.rs"));
+
+/// Whether the screen's words are Japanese. Called once, as the app starts.
 pub fn set_japanese(on: bool) {
     JAPANESE.store(on, Ordering::Relaxed);
 }
 
-/// 今、日本語で描くか。
-pub fn on() -> bool {
-    JAPANESE.load(Ordering::Relaxed)
+/// The language for this thread alone, `None` to follow the app. For tests,
+/// which share one process.
+#[doc(hidden)]
+pub fn set_here(japanese: Option<bool>) {
+    HERE.with(|h| h.set(japanese));
 }
 
-/// 表の 1 つの文。どちらも literal のままなので、`&'static str` は変わらない。
-pub fn t(en: &'static str, ja: &'static str) -> &'static str {
+/// Whether the words made now are Japanese.
+pub fn on() -> bool {
+    ENGLISH.with(Cell::get) == 0 && screen_is_japanese()
+}
+
+/// Whether the screen is Japanese, even inside `english` (where the words
+/// made are English, but table words handed in from outside may not be).
+pub fn screen_is_japanese() -> bool {
+    HERE.with(Cell::get)
+        .unwrap_or_else(|| JAPANESE.load(Ordering::Relaxed))
+}
+
+/// `make`'s answer with every table word in it English.
+pub fn english<T>(make: impl FnOnce() -> T) -> T {
+    struct Leave;
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            ENGLISH.with(|e| e.set(e.get().saturating_sub(1)));
+        }
+    }
+    ENGLISH.with(|e| e.set(e.get() + 1));
+    let _leave = Leave;
+    make()
+}
+
+/// One table entry, as the mirror writes it: `t(&TABLE[i])`. The answer is
+/// the table's own `&'static str`, so a tooltip sink can tell it from a
+/// person's words by its address (`entry_of`).
+pub fn t(entry: &'static (&'static str, &'static str)) -> &'static str {
     if on() {
-        ja
+        entry.1
     } else {
-        en
+        entry.0
     }
 }
 
-/// `format!` の日本語版。書式は英語と同じ引数を使う(`{name}`・`{0}`)。
+/// The entry whose English or Japanese `text` is, by address: the table's
+/// own literal, never a person's words that happen to read the same.
+pub fn entry_of(
+    text: &str,
+    table: &'static [(&'static str, &'static str)],
+) -> Option<&'static (&'static str, &'static str)> {
+    let same = |s: &str| s.as_ptr() == text.as_ptr() && s.len() == text.len();
+    table.iter().find(|(en, ja)| same(en) || same(ja))
+}
+
+/// A function whose whole answer becomes a tooltip by way of Strings and
+/// fields (the updates icon's, through the rail's button): made in English,
+/// which is what it answers, and again for the words it shows, which a
+/// tooltip finds by that exact English (`made_shown`). The mirror wraps the
+/// body of a function a table names with `made:`.
+pub fn made(producer: &'static str, make: impl Fn() -> String) -> String {
+    if !on() {
+        return make();
+    }
+    let en = english(&make);
+    let ja = make();
+    MADE.with(|m| {
+        let mut m = m.borrow_mut();
+        m.retain(|(p, _, _)| *p != producer);
+        if ja != en {
+            m.push((producer, en.clone(), ja));
+        }
+    });
+    en
+}
+
+/// The words to show for a tooltip that's the latest answer of a `made`
+/// producer, exactly. Only those answers are here, so a person's words
+/// that read like a table entry (or like one line of the answer) aren't.
+pub fn made_shown(name: &str) -> Option<String> {
+    if !on() {
+        return None;
+    }
+    MADE.with(|m| {
+        m.borrow()
+            .iter()
+            .find(|(_, en, _)| en == name)
+            .map(|(_, _, ja)| ja.clone())
+    })
+}
+
+/// `format!` in Japanese or English, the same arguments for either
+/// (`{name}`, `{0}`). A Japanese format that leaves out one of English's
+/// positional arguments takes it as `{0:.0}`, which writes nothing.
 #[macro_export]
 macro_rules! ja_format {
     ($ja:literal, $en:literal $($rest:tt)*) => {
@@ -43,175 +134,64 @@ macro_rules! ja_format {
     };
 }
 
-/// 描く時に訳す(ツールチップ)。表の英語と同じ文か、`{…}` の所を埋めた文なら
-/// 日本語に、どちらでもなければ行ごとに見て、それでも無ければそのまま。
-pub fn draw<'a>(text: &'a str, entries: &[(&str, &str)]) -> Cow<'a, str> {
-    draw_in(on(), text, entries)
-}
-
-fn draw_in<'a>(japanese: bool, text: &'a str, entries: &[(&str, &str)]) -> Cow<'a, str> {
-    if !japanese {
-        return Cow::Borrowed(text);
-    }
-    if let Some(ja) = one(text, entries) {
-        return Cow::Owned(ja);
-    }
-    if text.contains('\n') {
-        let lines: Vec<String> = text
-            .split('\n')
-            .map(|l| one(l, entries).unwrap_or_else(|| l.to_owned()))
-            .collect();
-        return Cow::Owned(lines.join("\n"));
-    }
-    Cow::Borrowed(text)
-}
-
-fn one(text: &str, entries: &[(&str, &str)]) -> Option<String> {
-    if let Some((_, ja)) = entries.iter().find(|(en, _)| *en == text) {
-        return Some(unescape_braces(ja));
-    }
-    entries
-        .iter()
-        .filter(|(en, _)| en.contains('{'))
-        .find_map(|(en, ja)| fill(en, ja, text))
-}
-
-/// 書式の文の 1 つの部分: 文字か、埋める所(鍵は名前か位置)。
-enum Piece {
-    Text(String),
-    Hole(String),
-}
-
-/// `format!` の書式を部分に分ける。`{}` は前から 0, 1, …、`{2}` は 2、`{name}` は name。
-fn pieces(format: &str) -> Vec<Piece> {
-    let mut out = Vec::new();
-    let mut text = String::new();
-    let mut next = 0;
-    let mut chars = format.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '{' if chars.peek() == Some(&'{') => {
-                chars.next();
-                text.push('{');
-            }
-            '}' if chars.peek() == Some(&'}') => {
-                chars.next();
-                text.push('}');
-            }
-            '{' => {
-                let mut spec = String::new();
-                for c in chars.by_ref() {
-                    if c == '}' {
-                        break;
-                    }
-                    spec.push(c);
-                }
-                let name = spec.split(':').next().unwrap_or("").trim().to_owned();
-                let key = if name.is_empty() {
-                    next += 1;
-                    (next - 1).to_string()
-                } else {
-                    name
-                };
-                out.push(Piece::Text(std::mem::take(&mut text)));
-                out.push(Piece::Hole(key));
-            }
-            _ => text.push(c),
-        }
-    }
-    out.push(Piece::Text(text));
-    out
-}
-
-/// `text` が英語の書式 `en` に合えば、埋めた所を日本語の書式 `ja` に入れる。
-fn fill(en: &str, ja: &str, text: &str) -> Option<String> {
-    let en = pieces(en);
-    let mut got: Vec<(String, String)> = Vec::new();
-    let mut rest = text;
-    let mut i = 0;
-    while i < en.len() {
-        match &en[i] {
-            Piece::Text(t) => rest = rest.strip_prefix(t.as_str())?,
-            Piece::Hole(key) => {
-                // 次の文字の部分まで。最後なら残り全部。
-                let until = match en.get(i + 1) {
-                    Some(Piece::Text(t)) if !t.is_empty() && i + 2 < en.len() => {
-                        rest.find(t.as_str())?
-                    }
-                    Some(Piece::Text(t)) if !t.is_empty() => rest.strip_suffix(t.as_str())?.len(),
-                    _ => rest.len(),
-                };
-                // until は find・strip_suffix・len から来るので、文字の境目にある。
-                let (value, after) = (rest.get(..until)?, rest.get(until..)?);
-                got.push((key.clone(), value.to_owned()));
-                rest = after;
-            }
-        }
-        i += 1;
-    }
-    if !rest.is_empty() || got.iter().any(|(_, v)| v.is_empty()) {
-        return None;
-    }
-    let mut out = String::new();
-    for p in pieces(ja) {
-        match p {
-            Piece::Text(t) => out.push_str(&t),
-            Piece::Hole(key) => out.push_str(&got.iter().find(|(k, _)| *k == key)?.1),
-        }
-    }
-    Some(out)
-}
-
-fn unescape_braces(s: &str) -> String {
-    s.replace("{{", "{").replace("}}", "}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // 言語は 1 つの global で、英語を見るほかの試験と同時に流れるので、ここでは
-    // 切り替えない。日本語の側は draw_in で見る。
+    static ENTRY: (&str, &str) = ("Dismiss", "閉じる");
+
+    /// The same words as `ENTRY`'s English, somewhere else in memory.
+    fn typed() -> String {
+        "Dis".to_owned() + "miss"
+    }
+
     #[test]
     fn english_until_the_app_says_otherwise() {
         assert!(!on());
-        assert_eq!(t("Dismiss", "閉じる"), "Dismiss");
+        assert_eq!(t(&ENTRY), "Dismiss");
         assert_eq!(ja_format!("{} 件", "{} things", 3), "3 things");
+    }
+
+    #[test]
+    fn english_holds_inside_japanese_and_comes_back() {
+        set_here(Some(true));
+        assert_eq!(t(&ENTRY), "閉じる");
+        let inner = english(|| (t(&ENTRY), english(|| t(&ENTRY)), t(&ENTRY)));
+        assert_eq!(inner, ("Dismiss", "Dismiss", "Dismiss"));
+        assert_eq!(t(&ENTRY), "閉じる");
+        assert_eq!(ja_format!("{} 件", "{} things", 3), "3 件");
+        set_here(None);
+    }
+
+    #[test]
+    fn an_entry_is_found_by_address_not_by_its_words() {
+        static TWO: [(&str, &str); 1] = [("Dismiss", "閉じる")];
+        set_here(Some(true));
+        assert!(entry_of(t(&TWO[0]), &TWO).is_some());
+        assert!(english(|| entry_of(t(&TWO[0]), &TWO)).is_some());
+        assert_eq!(typed(), "Dismiss");
+        assert!(entry_of(&typed(), &TWO).is_none());
+        assert!(entry_of("閉じる".to_owned().as_str(), &TWO).is_none());
+        set_here(None);
+    }
+
+    #[test]
+    fn a_producer_answers_english_and_keeps_its_japanese_for_the_tooltip() {
+        let make = || format!("{}\n{}", t(&ENTRY), "Runner words");
+        assert_eq!(made("p", make), "Dismiss\nRunner words");
+        assert_eq!(made_shown("Dismiss\nRunner words"), None);
+        set_here(Some(true));
+        assert_eq!(made("p", make), "Dismiss\nRunner words");
         assert_eq!(
-            draw("Copy link", &[("Copy link", "リンクをコピー")]),
-            "Copy link"
+            made_shown("Dismiss\nRunner words").as_deref(),
+            Some("閉じる\nRunner words")
         );
-    }
-
-    #[test]
-    fn a_tooltip_is_drawn_from_the_table() {
-        let entries = [
-            ("Copy link", "リンクをコピー"),
-            ("In {}", "{} の中"),
-            ("Open {title} on {0}", "{0} で {title} を開く"),
-            ("Updates", "更新"),
-        ];
-        let ja = |text| draw_in(true, text, &entries).into_owned();
-        assert_eq!(ja("Copy link"), "リンクをコピー");
-        assert_eq!(ja("In ~/dev/me"), "~/dev/me の中");
-        assert_eq!(ja("Open Inbox on bruce"), "bruce で Inbox を開く");
-        assert_eq!(ja("Updates\nCopy link"), "更新\nリンクをコピー");
-        assert_eq!(ja("Something else"), "Something else");
-        assert_eq!(ja("In "), "In ");
-    }
-
-    // 埋める所に多バイトの文字が来ても、文字の途中で切らない。
-    #[test]
-    fn a_tooltip_with_japanese_in_its_holes_does_not_panic() {
-        let entries = [
-            ("Open {title} now", "今 {title} を開く"),
-            ("Saved in {}.", "{} に保存した。"),
-        ];
-        let ja = |text| draw_in(true, text, &entries).into_owned();
-        assert_eq!(ja("Open 受信箱 now"), "今 受信箱 を開く");
-        assert_eq!(ja("Saved in 書類."), "書類 に保存した。");
-        assert_eq!(ja("Saved in 書類"), "Saved in 書類");
-        assert_eq!(ja("Open 日本語"), "Open 日本語");
-        assert_eq!(ja("日本語 now"), "日本語 now");
+        // Only the whole answer, never a line of it or an entry on its own.
+        assert_eq!(made_shown("Dismiss"), None);
+        assert_eq!(made_shown("Runner words"), None);
+        // A producer's next answer replaces its last.
+        assert_eq!(made("p", || "Runner words".to_owned()), "Runner words");
+        assert_eq!(made_shown("Dismiss\nRunner words"), None);
+        set_here(None);
     }
 }

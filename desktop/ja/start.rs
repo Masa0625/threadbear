@@ -1,28 +1,39 @@
-// app の立ち上げで、画面の文の言語を決める(desktop/ja/README.md)。写しの
-// `fn main` の始めから呼ばれる(desktop/ja/mirror.rs)。
+// The screen's language, decided as the app starts (desktop/ja/README.md).
+// Called from the start of the copy's `fn main` (desktop/ja/mirror.rs).
 //
-// 値は「system(システムに合わせる)/ en / ja」の 3 つ。先に環境変数
-// THREADBEAR_LANG、無ければデータのフォルダの desktop-language.json の
-// `language`、どちらも無ければ system。system は macOS の優先言語の一番上が
-// `ja` で始まれば日本語。自動操作の build(specs)は、環境変数で頼まれない限り英語。
+// "system", "en" or "ja": THREADBEAR_LANG first, then `language` in
+// desktop-settings.json (beside `appearance`), then "system", which is
+// Japanese when the first of macOS's preferred languages starts with "ja".
+// The scripted build (the specs) is English unless THREADBEAR_LANG asks.
 use threadbear_client::config::RunnerConfig;
 
 pub(crate) fn start(automation: bool) {
     let asked = std::env::var("THREADBEAR_LANG").ok();
     let saved = if automation { None } else { saved_choice() };
-    let japanese = match asked.as_deref().or(saved.as_deref()).map(str::trim) {
-        Some("ja") => true,
-        Some("en") => false,
-        _ => !automation && system_is_japanese(),
-    };
-    threadbear_core::ja::set_japanese(japanese);
+    threadbear_core::ja::set_japanese(japanese(
+        asked.as_deref().or(saved.as_deref()),
+        automation,
+        system_is_japanese,
+    ));
 }
 
-/// desktop-language.json の `{"language": "ja"}`。
+fn japanese(choice: Option<&str>, automation: bool, system: fn() -> bool) -> bool {
+    match choice.map(str::trim) {
+        Some("ja") => true,
+        Some("en") => false,
+        _ => !automation && system(),
+    }
+}
+
+/// desktop-settings.json's `"language"`, read as the settings file is
+/// found (settings.rs), and never written here.
 fn saved_choice() -> Option<String> {
-    let path = RunnerConfig::from_env().home.join("desktop-language.json");
-    let data = std::fs::read(path).ok()?;
-    let value: serde_json::Value = serde_json::from_slice(&data).ok()?;
+    let path = crate::settings::Settings::path_in(&RunnerConfig::from_env().home);
+    language_in(&std::fs::read(path).ok()?)
+}
+
+fn language_in(data: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(data).ok()?;
     value.get("language")?.as_str().map(str::to_owned)
 }
 
@@ -40,4 +51,29 @@ fn system_is_japanese() -> bool {
         .iter()
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
         .is_some_and(|v| v.starts_with("ja"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_language_comes_from_the_settings_beside_the_appearance() {
+        let saved = br#"{ "appearance": "dark", "language": "ja" }"#;
+        assert_eq!(language_in(saved).as_deref(), Some("ja"));
+        assert_eq!(language_in(br#"{ "appearance": "dark" }"#), None);
+        assert_eq!(language_in(b"not json"), None);
+    }
+
+    #[test]
+    fn system_follows_macos_and_the_scripted_build_stays_english() {
+        let (yes, no): (fn() -> bool, fn() -> bool) = (|| true, || false);
+        assert!(japanese(Some("ja"), false, no));
+        assert!(!japanese(Some("en"), false, yes));
+        assert!(japanese(Some("system"), false, yes));
+        assert!(japanese(None, false, yes));
+        assert!(!japanese(None, false, no));
+        assert!(!japanese(Some("system"), true, yes));
+        assert!(japanese(Some("ja"), true, no));
+    }
 }

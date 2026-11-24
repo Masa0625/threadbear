@@ -1,65 +1,67 @@
-// 日本語の画面のための、ソースの写し(desktop/ja/README.md)。
+// Japanese screens by a copy of the source (desktop/ja/README.md).
 //
-// Cargo が組み立てるのは src/ そのものではなく、build script がここで作る写し
-// ($OUT_DIR/ja/)。写しの根(main.rs・lib.rs)は、各 `mod x;` に元のファイルの
-// 絶対パスを `#[path]` で付けただけの物で、表(desktop/ja/<crate>/)のある
-// ファイルだけを、表の英語の literal を「英語か日本語を選ぶ式」に差し替えて写す。
-// 元のソースは 1 文字も変えないので、Mike の更新はそのまま入る。
+// Cargo doesn't build src/ itself but a copy the build script makes here
+// ($OUT_DIR/ja/). The copy's root (main.rs, lib.rs) is the original with a
+// `#[path]` to each module's own file, so only a file with a table in
+// desktop/ja/<crate>/ (or with modules of its own under it) is copied, its
+// table's literals swapped for expressions that pick English or Japanese.
+// The source itself is never changed, so Mike's updates come in as they are.
 //
-// 差し替えは行の中だけで行い、行の数を変えない。写しのファイルの n 行目は
-// 元の n 行目のままなので、コンパイラの指す行はそのまま元のファイルで引ける。
+// Swaps stay inside their line, so line n of a copy is line n of the
+// original and the compiler's line numbers can be looked up there.
 //
-// build script(gpui/build.rs・core/build.rs)と、core の試験(`ja::mirror_tests`)
-// から使う。std だけで書く(Cargo.lock を変えない)。
-#![allow(dead_code, reason = "two build scripts each use their own half")]
+// Used by the build scripts (gpui/build.rs, core/build.rs) and core's tests
+// (`ja_mirror_tests`). Only std, so Cargo.lock stays as it is.
+#![allow(
+    dead_code,
+    reason = "each build script uses its own half, and the tests the rest"
+)]
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-/// gpui の build script から: src/main.rs の写しを作る。
+/// gpui's build script: the copy of src/main.rs.
 pub fn gpui() {
     let dir = manifest_dir();
     let out = out_dir();
-    let report = mirror(&Crate {
+    let mut report = mirror(&Crate {
         dir: dir.clone(),
         root: "src/main.rs",
         stub: "ja/main.rs",
         tables: dir.join("../ja/gpui"),
-        runtime: "threadbear_core::ja",
-        format_macro: "threadbear_core::ja_format!",
+        side: Side::Gpui,
         first: None,
         extra: vec![
             path_mod(&dir.join("../ja/start.rs"), "mod ja_start;"),
+            path_mod(&dir.join("../ja/tip.rs"), "mod ja_tip;"),
             path_mod(&out.join("ja/ja_table.rs"), "mod ja_table;"),
         ],
         main_call: Some("crate::ja_start::start(cfg!(feature = \"automation\"));".to_owned()),
-        out: out.clone(),
+        out,
     });
-    // 描く時に引く表: ツールチップは記録と自動操作に英語で渡り、描く時だけ訳す。
-    // core の文(更新のツールチップなど)も gpui が描くので、core の表も入れる。
-    let mut report = report;
-    let mut core = Report::default();
-    load_tables(&dir.join("../ja/core"), &mut core);
-    report.draw.extend(core.draw);
-    report.draw.sort();
-    report.draw.dedup_by(|a, b| a.0 == b.0);
-    write_if_changed(&out.join("ja/ja_table.rs"), &report.draw_table());
-    report.emit(&[dir.join("src"), dir.join("ja"), dir.join("../ja")]);
+    for own in [
+        "ja/main.rs",
+        "../ja/mirror.rs",
+        "../ja/start.rs",
+        "../ja/tip.rs",
+    ] {
+        report.watch.push(dir.join(own));
+    }
+    report.emit();
 }
 
-/// core の build script から: src/lib.rs の写しを作る。
+/// core's build script: the copy of src/lib.rs.
 pub fn core() {
     let dir = manifest_dir();
-    let report = mirror(&Crate {
+    let mut report = mirror(&Crate {
         dir: dir.clone(),
         root: "src/lib.rs",
         stub: "ja/lib.rs",
         tables: dir.join("../ja/core"),
-        runtime: "crate::ja",
-        // 写しの根は include! の中なので、crate の中から `crate::ja_format!` では
-        // 呼べない(rustc の決まり)。先頭の `#[macro_use]` で名前だけで呼ぶ。
-        format_macro: "ja_format!",
+        side: Side::Core,
+        // The copy's root is inside include!, where `crate::ja_format!` can't
+        // be named (a rustc rule), so `#[macro_use]` lets it go by its name.
         first: Some(format!(
             "#[macro_use] {} ",
             path_mod(&dir.join("../ja/runtime.rs"), "pub mod ja;")
@@ -71,13 +73,10 @@ pub fn core() {
         main_call: None,
         out: out_dir(),
     });
-    report.emit(&[
-        dir.join("src"),
-        dir.join("ja"),
-        dir.join("../ja/core"),
-        dir.join("../ja/runtime.rs"),
-        dir.join("../ja/mirror.rs"),
-    ]);
+    for own in ["ja/lib.rs", "../ja/runtime.rs", "../ja/mirror.rs"] {
+        report.watch.push(dir.join(own));
+    }
+    report.emit();
 }
 
 fn manifest_dir() -> PathBuf {
@@ -92,85 +91,124 @@ fn path_mod(path: &Path, item: &str) -> String {
     format!("#[path = {:?}] {item}", clean(path).display().to_string())
 }
 
-/// 1 つの crate の写し方。
+/// Which crate is copied, so what the swapped expressions call.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Side {
+    Core,
+    Gpui,
+}
+
+impl Side {
+    fn runtime(self) -> &'static str {
+        match self {
+            Side::Core => "crate::ja",
+            Side::Gpui => "threadbear_core::ja",
+        }
+    }
+
+    fn table(self) -> &'static str {
+        match self {
+            Side::Core => "crate::ja::TABLE",
+            Side::Gpui => "crate::ja_table::TABLE",
+        }
+    }
+
+    fn format_macro(self) -> &'static str {
+        match self {
+            Side::Core => "ja_format!",
+            Side::Gpui => "threadbear_core::ja_format!",
+        }
+    }
+
+    /// The table's file in $OUT_DIR/ja and how it's declared there.
+    fn table_file(self) -> (&'static str, &'static str) {
+        match self {
+            Side::Core => ("table.rs", "pub static"),
+            Side::Gpui => ("ja_table.rs", "pub(crate) static"),
+        }
+    }
+}
+
+/// How one crate is copied.
 pub struct Crate {
     pub dir: PathBuf,
-    /// 元の根(Cargo.toml が前に指していた物)。
+    /// The original root (what Cargo.toml pointed at before).
     pub root: &'static str,
-    /// Cargo.toml が今指す、写しを取り込むだけのファイル。
+    /// What Cargo.toml points at now: a file that only includes the copy.
     pub stub: &'static str,
     pub tables: PathBuf,
-    /// 差し替えた式が呼ぶ所。
-    pub runtime: &'static str,
-    pub format_macro: &'static str,
-    /// 写しの根の 1 行目の頭に足す物(行の数を変えない)。
+    pub side: Side,
+    /// Put before the copied root's first line (the line count stays).
     pub first: Option<String>,
-    /// 写しの根の終わりに足す行。
+    /// Lines added after the copied root.
     pub extra: Vec<String>,
-    /// `fn main` の始めに足す式。
+    /// Put at the start of `fn main`.
     pub main_call: Option<String>,
     pub out: PathBuf,
 }
 
-/// 写した結果。表に無い文・使われなかった表の行を、取り込みの時に見せる。
+/// What a copy did, for whoever brings in Mike's next release.
 #[derive(Default)]
 pub struct Report {
-    /// 訳した所: (ファイル, 行, 英語)。
+    /// Swapped: (file, line, English).
     pub translated: Vec<(String, usize, String)>,
-    /// 英語のまま残した表の文(記録と自動操作に渡る所): (ファイル, 行, 英語, 呼び先)。
+    /// Table words left English where they're written: (file, line, English, why).
     pub kept: Vec<(String, usize, String, String)>,
-    /// 表に無い、画面の文らしい literal: (ファイル, 行, 英語)。
+    /// Literals that look like words on the screen and aren't in a table:
+    /// (file, line, text).
     pub missing: Vec<(String, usize, String)>,
-    /// 表にあるのにソースに無い行: (表, 英語)。
+    /// Table lines whose words the source no longer has: (table, words).
     pub stale: Vec<(String, String)>,
-    /// 当たらなかった置き換えの規則: (表, 探す文)。
-    pub unmatched_rules: Vec<(String, String)>,
-    /// 壊れていて止めるべき事。
+    /// Tooltips whose words couldn't be made twice: (file, line, why).
+    pub notes: Vec<(String, usize, String)>,
+    /// What stops the build.
     pub errors: Vec<String>,
-    /// 描く時に引く表(ツールチップ用): (英語, 日本語)。どちらも literal の中身のまま。
-    pub draw: Vec<(String, String)>,
+    /// What the build script reruns for.
+    pub watch: Vec<PathBuf>,
 }
 
 impl Report {
-    fn emit(&self, watch: &[PathBuf]) {
-        for path in watch {
+    fn emit(&self) {
+        for path in &self.watch {
             println!("cargo:rerun-if-changed={}", path.display());
         }
         println!("cargo:rerun-if-env-changed=THREADBEAR_JA_REPORT");
-        let loud = std::env::var_os("THREADBEAR_JA_REPORT").is_some();
         for (table, en) in &self.stale {
             println!(
                 "cargo:warning=ja: {table} の \"{en}\" がソースに無い(Mike が変えたら、表を直す)"
             );
         }
-        for (table, find) in &self.unmatched_rules {
-            println!("cargo:warning=ja: {table} の置き換え \"{find}\" が当たらない");
+        for (file, line, why) in &self.notes {
+            println!("cargo:warning=ja: {file}:{line} {why}");
         }
-        if loud {
+        if std::env::var_os("THREADBEAR_JA_REPORT").is_some() {
             for (file, line, en) in &self.missing {
                 println!("cargo:warning=ja: 表に無い {file}:{line} \"{en}\"");
             }
         }
-        let text = self.text();
-        write_if_changed(&out_dir().join("ja-report.txt"), &text);
-        if !self.errors.is_empty() {
-            for e in &self.errors {
+        let mut errors = self.errors.clone();
+        if let Err(e) = write_if_changed(&out_dir().join("ja-report.txt"), &self.text()) {
+            errors.push(e);
+        }
+        if !errors.is_empty() {
+            for e in &errors {
                 eprintln!("ja: {e}");
             }
             std::process::exit(1);
         }
     }
 
-    /// 人が読む一覧。$OUT_DIR/ja-report.txt に書く。
+    /// The list for people, written to $OUT_DIR/ja-report.txt.
     pub fn text(&self) -> String {
         let mut s = String::new();
         let _ = writeln!(
             s,
-            "訳した所 {} / 英語のまま(記録・自動操作) {} / 表に無い {} / 表だけにある {}",
+            "訳した所 {} / 英語のまま(記録・自動操作) {} / 表に無い {} / 表だけにある {} / ツールチップの注意 {}",
             self.translated.len(),
             self.kept.len(),
             self.missing.len(),
-            self.stale.len()
+            self.stale.len(),
+            self.notes.len()
         );
         for (f, l, en) in &self.missing {
             let _ = writeln!(s, "表に無い\t{f}:{l}\t{en}");
@@ -178,42 +216,37 @@ impl Report {
         for (t, en) in &self.stale {
             let _ = writeln!(s, "表だけ\t{t}\t{en}");
         }
-        for (f, l, en, callee) in &self.kept {
-            let _ = writeln!(s, "英語のまま\t{f}:{l}\t{callee}\t{en}");
+        for (f, l, why) in &self.notes {
+            let _ = writeln!(s, "注意\t{f}:{l}\t{why}");
+        }
+        for (f, l, en, why) in &self.kept {
+            let _ = writeln!(s, "英語のまま\t{f}:{l}\t{why}\t{en}");
         }
         for (f, l, en) in &self.translated {
             let _ = writeln!(s, "訳した\t{f}:{l}\t{en}");
         }
         s
     }
-
-    fn draw_table(&self) -> String {
-        let mut s = String::from(
-            "// build.rs が desktop/ja/gpui/ の表から書く。描く時だけ引く(ツールチップ)。\n\
-             pub(crate) static ENTRIES: &[(&str, &str)] = &[\n",
-        );
-        for (en, ja) in &self.draw {
-            let _ = writeln!(s, "    (\"{en}\", \"{ja}\"),");
-        }
-        s.push_str("];\n");
-        s
-    }
 }
 
-/// 写しを作る。書くのは中身が変わったファイルだけ(変えなければ再 build しない)。
+/// Makes the copy, writing only files whose text changed (so nothing
+/// rebuilds for nothing).
 pub fn mirror(c: &Crate) -> Report {
     let mut report = Report::default();
-    let tables = load_tables(&c.tables, &mut report);
-    let mut m = Mirror {
-        c,
-        tables,
-        report,
-        written: Vec::new(),
-    };
+    let mut tables = load_tables(&c.tables, &mut report);
+    report.watch.push(c.tables.clone());
+    let mut rows: Vec<(String, String)> = Vec::new();
+    for table in tables.values_mut() {
+        for e in &mut table.entries {
+            e.index = rows.len();
+            rows.push((e.en.clone(), e.ja.clone()));
+        }
+    }
+    let mut m = Mirror { c, tables, report };
     let root = c.dir.join(c.root);
     let text = m.file(&root, true, Path::new(c.root));
-    // 写しの根は include! で取り込むので、`#![...]` と `//!` を置けない。
-    // それらは stub が持つ。同じかを見る(Mike が変えたら止まって知らせる)。
+    // The copy's root is include!d, where `#![...]` and `//!` can't be: the
+    // stub carries them, and it must say what the root says.
     let (text, inner) = blank_inner_attributes(&text);
     let stub = std::fs::read_to_string(c.dir.join(c.stub)).unwrap_or_default();
     let stub_attrs = squash(&blank_inner_attributes(&strip_comments(&stub)).1.join(""));
@@ -236,29 +269,63 @@ pub fn mirror(c: &Crate) -> Report {
         text.push_str(line);
         text.push('\n');
     }
-    write_if_changed(&c.out.join("ja").join(file_name(c.root)), &text);
-    for (path, en) in m.unused() {
-        m.report.stale.push((path, en));
-    }
+    m.write(&c.out.join("ja").join(file_name(c.root)), &text);
+    let (file, declared) = c.side.table_file();
+    m.write(&c.out.join("ja").join(file), &table_source(declared, &rows));
+    m.finish();
     m.report
 }
 
+/// `static TABLE: [(&str, &str); N]`, each pair as the table wrote it.
+fn table_source(declared: &str, rows: &[(String, String)]) -> String {
+    let mut s = format!(
+        "// Written by desktop/ja/mirror.rs from desktop/ja's tables.\n\
+         {declared} TABLE: [(&str, &str); {}] = [\n",
+        rows.len()
+    );
+    for (en, ja) in rows {
+        let _ = writeln!(s, "    (\"{en}\", \"{ja}\"),");
+    }
+    s.push_str("];\n");
+    s
+}
+
 struct Table {
-    /// 表のファイルのパス(知らせる時に使う)。
+    /// The table's path, to name it in a message.
     name: String,
     entries: Vec<Entry>,
-    rules: Vec<(String, String, bool)>,
+    rules: Vec<Rule>,
+    /// `made: <fn>`: (function, line, found).
+    made: Vec<(String, usize, bool)>,
+    /// `tip-macro: <name> <n>`: the macro's nth argument is a tooltip.
+    tip_macros: Vec<(String, usize)>,
+    /// `tip-method: <name>`: `.name(…)` in this file is the Tip trait's.
+    tip_methods: Vec<String>,
+    /// `skip "…"`: (words, used).
+    skips: Vec<(String, bool)>,
+    /// Its file was found and copied.
+    visited: bool,
 }
 
 struct Entry {
     en: String,
     ja: String,
-    /// 呼ぶ所では訳さず、描く時だけ訳す(ツールチップに流れる文)。
+    /// English where it's written: it's also an id or a screen reader's name.
     tip: bool,
     used: bool,
+    /// Its row in the crate's TABLE.
+    index: usize,
 }
 
-/// desktop/ja/<crate>/<src の下のパス>.txt を、src/<パス>.rs の表として読む。
+struct Rule {
+    find: String,
+    with: String,
+    /// Every match (`replace all:`) rather than exactly one.
+    all: bool,
+    line: usize,
+}
+
+/// desktop/ja/<crate>/<path under src>.txt is the table for src/<path>.rs.
 fn load_tables(dir: &Path, report: &mut Report) -> BTreeMap<PathBuf, Table> {
     let mut out = BTreeMap::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -275,16 +342,16 @@ fn load_tables(dir: &Path, report: &mut Report) -> BTreeMap<PathBuf, Table> {
                     continue;
                 };
                 let src = Path::new("src").join(rel.with_extension("rs"));
-                let text = std::fs::read_to_string(&p).unwrap_or_default();
                 let name = format!(
                     "desktop/ja/{}",
                     p.strip_prefix(dir.join("..")).unwrap_or(&p).display()
                 );
-                match parse_table(&name, &text) {
+                report.watch.push(p.clone());
+                match std::fs::read_to_string(&p)
+                    .map_err(|e| format!("{name} を読めない: {e}"))
+                    .and_then(|text| parse_table(&name, &text))
+                {
                     Ok(t) => {
-                        for (en, ja) in t.entries.iter().map(|e| (&e.en, &e.ja)) {
-                            report.draw.push((en.clone(), ja.clone()));
-                        }
                         out.insert(src, t);
                     }
                     Err(e) => report.errors.push(e),
@@ -292,66 +359,95 @@ fn load_tables(dir: &Path, report: &mut Report) -> BTreeMap<PathBuf, Table> {
             }
         }
     }
-    report.draw.sort();
-    report.draw.dedup_by(|a, b| a.0 == b.0);
     out
 }
 
-/// 表の書き方(1 行 1 つ):
-///   "English" = "日本語"          呼ぶ所で訳す(literal の中身を、エスケープごとそのまま)
-///   tip "English {}" = "{} の…"   呼ぶ所では訳さず、ツールチップを描く時だけ訳す
-///   replace: <元のコード>         次の行の with: に置き換える(描く所に引く式を差す)
-///   with: <新しいコード>
-///   # から行の終わりは注釈
+/// A table, a line each:
+///   "English" = "日本語"        swapped where it's written (the literal's text
+///                                as written, escapes and all)
+///   tip "English" = "日本語"    English where it's written, as it's also an id
+///                                or a screen reader's name; drawn in Japanese
+///                                where a `replace:` puts `ja_tip::shown_str`
+///   skip "English"              not on the screen: not listed as missing
+///   replace: <code>             the next `with:` takes its place, exactly once
+///   replace all: <code>         ... every time, at least once
+///   with: <code>
+///   made: <fn>                  the function's answer is a tooltip, made in
+///                                English and again in Japanese (`ja::made`)
+///   tip-macro: <name> <n>       the macro's nth argument is a tooltip
+///   tip-method: <name>          `.name(…)` in the file is the Tip trait's
+///                                (another type's method can share the name)
+///   # to the end of a line is a note
 fn parse_table(name: &str, text: &str) -> Result<Table, String> {
     let mut t = Table {
         name: name.to_owned(),
         entries: Vec::new(),
         rules: Vec::new(),
+        made: Vec::new(),
+        tip_macros: Vec::new(),
+        tip_methods: Vec::new(),
+        skips: Vec::new(),
+        visited: false,
     };
-    let mut pending: Option<String> = None;
+    let mut pending: Option<(String, bool, usize)> = None;
     for (i, raw) in text.lines().enumerate() {
         let line = raw.trim();
         let at = || format!("{name}:{}", i + 1);
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some(code) = line.strip_prefix("replace:") {
-            pending = Some(code.trim().to_owned());
+        if let Some((all, code)) = line
+            .strip_prefix("replace all:")
+            .map(|c| (true, c))
+            .or_else(|| line.strip_prefix("replace:").map(|c| (false, c)))
+        {
+            if pending.is_some() {
+                return Err(format!("{}: 前の replace: に with: が無い", at()));
+            }
+            pending = Some((code.trim().to_owned(), all, i + 1));
             continue;
         }
         if let Some(code) = line.strip_prefix("with:") {
-            let find = pending
+            let (find, all, line) = pending
                 .take()
                 .ok_or_else(|| format!("{}: with: の前に replace: が無い", at()))?;
-            t.rules.push((find, code.trim().to_owned(), false));
+            t.rules.push(Rule {
+                find,
+                with: code.trim().to_owned(),
+                all,
+                line,
+            });
             continue;
         }
-        let (tip, rest) = match line.strip_prefix("tip ") {
-            Some(r) => (true, r.trim_start()),
-            None => (false, line),
-        };
-        let (en, rest) =
-            literal(rest).ok_or_else(|| format!("{}: 英語の \"…\" が読めない", at()))?;
-        let rest = rest
-            .trim_start()
-            .strip_prefix('=')
-            .ok_or_else(|| format!("{}: = が無い", at()))?;
-        let (ja, rest) = literal(rest.trim_start())
-            .ok_or_else(|| format!("{}: 日本語の \"…\" が読めない", at()))?;
-        let rest = rest.trim();
-        if !(rest.is_empty() || rest.starts_with('#')) {
-            return Err(format!("{}: 行の終わりに余分な物", at()));
+        if let Some(f) = line.strip_prefix("made:") {
+            t.made.push((f.trim().to_owned(), i + 1, false));
+            continue;
         }
-        if ja.contains('—') {
-            return Err(format!("{}: 日本語の UI の文に em dash を使わない", at()));
+        if let Some(rest) = line.strip_prefix("tip-macro:") {
+            let mut parts = rest.split_whitespace();
+            let (Some(mac), Some(Ok(n)), None) = (
+                parts.next(),
+                parts.next().map(str::parse::<usize>),
+                parts.next(),
+            ) else {
+                return Err(format!("{}: tip-macro: <名前> <何番目> と書く", at()));
+            };
+            t.tip_macros.push((mac.trim_end_matches('!').to_owned(), n));
+            continue;
         }
-        t.entries.push(Entry {
-            en: en.to_owned(),
-            ja: ja.to_owned(),
-            tip,
-            used: false,
-        });
+        if let Some(method) = line.strip_prefix("tip-method:") {
+            t.tip_methods.push(method.trim().to_owned());
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("skip ") {
+            let (en, rest) = literal(rest.trim_start())
+                .ok_or_else(|| format!("{}: skip の \"…\" が読めない", at()))?;
+            end_of_line(rest).ok_or_else(|| format!("{}: 行の終わりに余分な物", at()))?;
+            t.skips.push((en.to_owned(), false));
+            continue;
+        }
+        t.entries
+            .push(entry(line).map_err(|why| format!("{}: {why}", at()))?);
     }
     if pending.is_some() {
         return Err(format!("{name}: replace: の後に with: が無い"));
@@ -359,7 +455,36 @@ fn parse_table(name: &str, text: &str) -> Result<Table, String> {
     Ok(t)
 }
 
-/// `"…"` の中身(エスケープはそのまま)と残り。
+fn entry(line: &str) -> Result<Entry, &'static str> {
+    let (tip, rest) = match line.strip_prefix("tip ") {
+        Some(r) => (true, r.trim_start()),
+        None => (false, line),
+    };
+    let (en, rest) = literal(rest).ok_or("英語の \"…\" が読めない")?;
+    let rest = rest.trim_start().strip_prefix('=').ok_or("= が無い")?;
+    let (ja, rest) = literal(rest.trim_start()).ok_or("日本語の \"…\" が読めない")?;
+    end_of_line(rest).ok_or("行の終わりに余分な物")?;
+    if en.is_empty() || ja.is_empty() {
+        return Err("空の文は表に置けない");
+    }
+    if ja.contains('—') {
+        return Err("日本語の UI の文に em dash を使わない");
+    }
+    Ok(Entry {
+        en: en.to_owned(),
+        ja: ja.to_owned(),
+        tip,
+        used: false,
+        index: 0,
+    })
+}
+
+fn end_of_line(rest: &str) -> Option<()> {
+    let rest = rest.trim();
+    (rest.is_empty() || rest.starts_with('#')).then_some(())
+}
+
+/// The text of a `"…"` (escapes as they are) and what follows it.
 fn literal(s: &str) -> Option<(&str, &str)> {
     let body = s.strip_prefix('"')?;
     let mut escaped = false;
@@ -373,20 +498,38 @@ fn literal(s: &str) -> Option<(&str, &str)> {
     None
 }
 
+/// A change to the original text: (start, end, new text).
+type Edit = (usize, usize, String);
+
 struct Mirror<'a> {
     c: &'a Crate,
     tables: BTreeMap<PathBuf, Table>,
     report: Report,
-    written: Vec<PathBuf>,
 }
 
 impl Mirror<'_> {
-    /// `path`(元のファイル)を写した中身。`rel` は crate の中のパス。
+    fn write(&mut self, path: &Path, text: &str) {
+        if let Err(e) = write_if_changed(path, text) {
+            self.report.errors.push(e);
+        }
+    }
+
+    /// The copy of `path` (an original file); `rel` is its path in the crate.
     fn file(&mut self, path: &Path, is_root: bool, rel: &Path) -> String {
-        let text = std::fs::read_to_string(path).unwrap_or_default();
+        self.report.watch.push(path.to_path_buf());
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => {
+                self.report
+                    .errors
+                    .push(format!("{} を読めない: {e}", path.display()));
+                String::new()
+            }
+        };
         let toks = lex(&text);
-        let mut edits: Vec<(usize, usize, String)> = Vec::new();
-        // mod-rs(根と mod.rs)の子は同じフォルダ、ほかは名前のフォルダ。
+        let mut edits: Vec<Edit> = Vec::new();
+        // A mod-rs file's (the root's, a mod.rs's) modules are beside it,
+        // anyone else's in the folder named after it.
         let mod_rs = is_root || path.file_name().is_some_and(|n| n == "mod.rs");
         let own_dir = match (mod_rs, path.parent(), path.file_stem()) {
             (true, Some(p), _) => p.to_path_buf(),
@@ -394,10 +537,16 @@ impl Mirror<'_> {
             _ => PathBuf::new(),
         };
         self.child_mods(&text, &toks, path, &own_dir, &mut edits);
-        self.include_paths(&text, &toks, path, &mut edits);
-        if let Some(table) = self.tables.remove(rel) {
-            let mut table = table;
-            self.translate(&text, &toks, rel, &mut table, &mut edits);
+        include_paths(&text, &toks, path, &mut edits);
+        let file = rel.display().to_string();
+        if let Some(mut table) = self.tables.remove(rel) {
+            table.visited = true;
+            self.translate(&text, &toks, &file, &mut table, &mut edits);
+            if self.c.side == Side::Gpui {
+                let sinks = Sinks::find(&text, &toks, &table);
+                sinks.rewrite(&text, &toks, &file, &mut self.report, &mut edits);
+            }
+            self.made(&text, &toks, &mut table, &mut edits);
             self.tables.insert(rel.to_path_buf(), table);
         }
         if is_root {
@@ -409,30 +558,23 @@ impl Mirror<'_> {
                 }
             }
         }
-        let out = apply(&text, edits);
-        if let Some(table) = self.tables.get_mut(rel) {
-            let mut out = out;
-            for rule in &mut table.rules {
-                if let Some(at) = out.find(&rule.0) {
-                    out.replace_range(at..at + rule.0.len(), &rule.1);
-                    rule.2 = true;
-                }
-            }
-            return out;
+        let mut out = apply(&text, edits);
+        if let Some(table) = self.tables.get(rel) {
+            out = rules(&out, table, &file, &mut self.report.errors);
         }
         out
     }
 
-    /// 各 `mod x;` に、元のファイルの絶対パス(か写しのパス)を付ける。
+    /// Gives each `mod x;` the absolute path of its own file (or its copy).
     fn child_mods(
         &mut self,
         text: &str,
         toks: &[Tok],
         path: &Path,
         own_dir: &Path,
-        edits: &mut Vec<(usize, usize, String)>,
+        edits: &mut Vec<Edit>,
     ) {
-        // 中に書いた `mod a { mod b; }` の b は own_dir/a/b.rs。
+        // In `mod a { mod b; }` written out in a file, b is own_dir/a/b.rs.
         let mut inline: Vec<Option<String>> = Vec::new();
         let mut i = 0;
         while i < toks.len() {
@@ -460,8 +602,8 @@ impl Mirror<'_> {
                     let start = item_start(text, toks, i);
                     let given = path_attribute(text, toks, start);
                     let file = match &given {
-                        // `#[path = "…"]` は、中に書いた mod の中なら dir から、
-                        // 外ならファイルのあるフォルダから(Rust の決まり)。
+                        // `#[path]` inside a written-out mod is from dir, and
+                        // outside one from the file's own folder (Rust's rule).
                         Some((_, p)) if inline.iter().flatten().next().is_some() => dir.join(p),
                         Some((_, p)) => path.parent().unwrap_or(Path::new("")).join(p),
                         None => {
@@ -474,14 +616,14 @@ impl Mirror<'_> {
                         }
                     };
                     let child_rel = rel_in_crate(&self.c.dir, &file);
-                    // 子を持つ x.rs(x/ がある)と表のあるファイルは写す。ほかは元を指す。
+                    // An x.rs with an x/ of modules, and a file with a table,
+                    // are copied; the rest are built where they are.
                     let has_children = file.file_name().is_some_and(|n| n != "mod.rs")
                         && file.with_extension("").is_dir();
                     let target = if has_children || self.tables.contains_key(&child_rel) {
                         let body = self.file(&file, false, &child_rel);
                         let dest = self.c.out.join("ja").join(&child_rel);
-                        write_if_changed(&dest, &body);
-                        self.written.push(dest.clone());
+                        self.write(&dest, &body);
                         dest
                     } else {
                         file
@@ -500,67 +642,42 @@ impl Mirror<'_> {
         }
     }
 
-    /// 写しは別の所に置くので、`include_str!("相対")` などを絶対パスにする。
-    fn include_paths(
-        &self,
-        text: &str,
-        toks: &[Tok],
-        path: &Path,
-        edits: &mut Vec<(usize, usize, String)>,
-    ) {
-        let dir = path.parent().unwrap_or(Path::new(""));
-        for i in 0..toks.len().saturating_sub(3) {
-            let name = toks[i].text(text);
-            if toks[i].kind == Kind::Ident
-                && matches!(name, "include_str" | "include_bytes" | "include")
-                && toks[i + 1].is_punct(text, "!")
-                && toks[i + 2].kind == Kind::Open('(')
-                && toks[i + 3].kind == Kind::Str
-            {
-                let Some(inner) = quoted(toks[i + 3].text(text)) else {
-                    continue;
-                };
-                if !Path::new(inner).is_absolute() {
-                    let abs = clean(&dir.join(inner)).display().to_string();
-                    edits.push((toks[i + 3].start, toks[i + 3].end, format!("{abs:?}")));
-                }
-            }
-        }
-    }
-
     fn translate(
         &mut self,
         text: &str,
         toks: &[Tok],
-        rel: &Path,
+        file: &str,
         table: &mut Table,
-        edits: &mut Vec<(usize, usize, String)>,
+        edits: &mut Vec<Edit>,
     ) {
-        let file = rel.display().to_string();
         let index: BTreeMap<String, usize> = table
             .entries
             .iter()
             .enumerate()
             .map(|(i, e)| (e.en.clone(), i))
             .collect();
+        let (runtime, rows) = (self.c.side.runtime(), self.c.side.table());
         let mut walk = Walk::default();
         for (i, t) in toks.iter().enumerate() {
             walk.step(text, toks, i);
             if t.kind != Kind::Str {
                 continue;
             }
-            let lit = t.text(text);
-            // r"" b"" と閉じていない物は扱わない。
-            let Some(content) = quoted(lit) else {
+            // r"" b"" and an unclosed one are left alone.
+            let Some(content) = quoted(t.text(text)) else {
                 continue;
             };
             let line = text[..t.start].matches('\n').count() + 1;
             let ctx = walk.context(text, toks, i);
+            if let Some(skip) = table.skips.iter_mut().find(|(s, _)| s == content) {
+                skip.1 = true;
+            }
             let Some(&ei) = index.get(content) else {
-                if ctx.ui && ctx.keep.is_none() && looks_like_ui(content) {
+                let skipped = table.skips.iter().any(|(s, _)| s == content);
+                if ctx.ui && ctx.keep.is_none() && !skipped && looks_like_words(content) {
                     self.report
                         .missing
-                        .push((file.clone(), line, content.to_owned()));
+                        .push((file.to_owned(), line, content.to_owned()));
                 }
                 continue;
             };
@@ -569,48 +686,432 @@ impl Mirror<'_> {
             if !ctx.ui {
                 continue;
             }
-            if entry.tip || ctx.keep.is_some() {
-                let why = ctx.keep.clone().unwrap_or_else(|| "tip".to_owned());
+            if let Some(why) = ctx.keep {
                 self.report
                     .kept
-                    .push((file.clone(), line, content.to_owned(), why));
+                    .push((file.to_owned(), line, content.to_owned(), why));
                 continue;
             }
-            if let Some((mac_start, open_end)) = ctx.format_head {
-                // format!("en", …) → ja_format!("ja", "en", …)。引数はそのまま。
-                edits.push((
+            let row = entry.index;
+            match (entry.tip, ctx.format_head) {
+                (true, Some(_)) => {
+                    self.report.kept.push((
+                        file.to_owned(),
+                        line,
+                        content.to_owned(),
+                        "tip (format)".to_owned(),
+                    ));
+                    continue;
+                }
+                (true, None) => {
+                    // English, and the table's own address, which a tooltip
+                    // or `shown_str` turns into the Japanese.
+                    edits.push((t.start, t.end, format!("{rows}[{row}].0")));
+                    self.report.kept.push((
+                        file.to_owned(),
+                        line,
+                        content.to_owned(),
+                        "tip".to_owned(),
+                    ));
+                    continue;
+                }
+                // format!("en", …) → ja_format!("ja", "en", …), the arguments as they were.
+                (false, Some((mac_start, open_end))) => edits.push((
                     mac_start,
                     open_end,
-                    format!("{}(\"{}\", ", self.c.format_macro, entry.ja),
-                ));
-            } else {
-                edits.push((
-                    t.start,
-                    t.end,
-                    format!("{}::t({lit}, \"{}\")", self.c.runtime, entry.ja),
-                ));
+                    format!("{}(\"{}\", ", self.c.side.format_macro(), entry.ja),
+                )),
+                (false, None) => {
+                    edits.push((t.start, t.end, format!("{runtime}::t(&{rows}[{row}])")))
+                }
             }
             self.report
                 .translated
-                .push((file.clone(), line, content.to_owned()));
+                .push((file.to_owned(), line, content.to_owned()));
         }
     }
 
-    fn unused(&self) -> Vec<(String, String)> {
-        let mut out = Vec::new();
-        for t in self.tables.values() {
-            for e in &t.entries {
-                if !e.used {
-                    out.push((t.name.clone(), e.en.clone()));
+    /// `made: <fn>`: the function's body runs through `ja::made`.
+    fn made(&mut self, text: &str, toks: &[Tok], table: &mut Table, edits: &mut Vec<Edit>) {
+        let runtime = self.c.side.runtime();
+        for (name, line, found) in &mut table.made {
+            let bodies: Vec<(usize, usize)> = (0..toks.len().saturating_sub(1))
+                .filter(|&i| toks[i].is_ident(text, "fn") && toks[i + 1].is_ident(text, name))
+                .filter_map(|i| fn_body(toks, i))
+                .collect();
+            match bodies.as_slice() {
+                [(open, close)] => {
+                    *found = true;
+                    let at = toks[*open].end;
+                    edits.push((at, at, format!(" {runtime}::made({name:?}, || {{")));
+                    let end = toks[*close].start;
+                    edits.push((end, end, "})".to_owned()));
                 }
+                _ => self.report.errors.push(format!(
+                    "{}:{line}: made: {name} に当たる fn が {} 個(1 個のはず)",
+                    table.name,
+                    bodies.len()
+                )),
             }
-            for r in &t.rules {
-                if !r.2 {
-                    out.push((t.name.clone(), format!("replace: {}", r.0)));
+        }
+    }
+
+    fn finish(&mut self) {
+        for t in self.tables.values() {
+            let has_code = !t.rules.is_empty() || !t.made.is_empty();
+            if !t.visited && has_code {
+                self.report.errors.push(format!(
+                    "{} のファイルが写しの中に無いので、その replace: と made: が当たらない",
+                    t.name
+                ));
+            }
+            for e in t.entries.iter().filter(|e| !e.used) {
+                self.report.stale.push((t.name.clone(), e.en.clone()));
+            }
+            for (s, _) in t.skips.iter().filter(|(_, used)| !used) {
+                self.report
+                    .stale
+                    .push((t.name.clone(), format!("skip {s}")));
+            }
+        }
+    }
+}
+
+/// The table's `replace:` rules, on the copy's text. A rule that doesn't
+/// match as many times as it says stops the build: it's what puts a
+/// tooltip's or a word's Japanese where it's drawn.
+fn rules(text: &str, table: &Table, file: &str, errors: &mut Vec<String>) -> String {
+    let mut out = text.to_owned();
+    for rule in &table.rules {
+        let count = out.matches(rule.find.as_str()).count();
+        let fits = if rule.all { count >= 1 } else { count == 1 };
+        if !fits {
+            errors.push(format!(
+                "{}:{}: replace{}: が写しの {file} の {count} か所に当たった({})。Mike が変えた所に合わせて表を直す: {}",
+                table.name,
+                rule.line,
+                if rule.all { " all" } else { "" },
+                if rule.all { "1 か所以上のはず" } else { "1 か所のはず" },
+                rule.find
+            ));
+            continue;
+        }
+        out = out.replace(rule.find.as_str(), &rule.with);
+    }
+    out
+}
+
+/// Where tooltips are made in a copied gpui file: `.tip(…)` where the table
+/// says it's the Tip trait's (`tip-method: tip`; a row type can have a
+/// `tip` of its own), and each `tip-macro:` macro's argument. A tooltip is
+/// made twice (`ja_tip::faces`),
+/// once in English for its name and once for its words. One that's a
+/// variable has its `let` made twice instead (`ja_tip::both`).
+struct Sinks {
+    /// `.tip(` calls: (the `tip` token, its `(`, its `)`).
+    calls: Vec<(usize, usize, usize)>,
+    /// Arguments that are one variable: its token.
+    idents: Vec<usize>,
+}
+
+impl Sinks {
+    fn find(text: &str, toks: &[Tok], table: &Table) -> Sinks {
+        let mut sinks = Sinks {
+            calls: Vec::new(),
+            idents: Vec::new(),
+        };
+        for i in 0..toks.len().saturating_sub(2) {
+            let open = i + 2;
+            if toks[i].is_punct(text, ".")
+                && table
+                    .tip_methods
+                    .iter()
+                    .any(|m| toks[i + 1].is_ident(text, m))
+                && toks[open].kind == Kind::Open('(')
+            {
+                let Some(close) = matching(toks, open) else {
+                    continue;
+                };
+                let args = args(text, toks, open, close);
+                if let [(a, b)] = args.as_slice() {
+                    sinks.calls.push((i + 1, open, close));
+                    if b - a == 1 && toks[*a].kind == Kind::Ident {
+                        sinks.idents.push(*a);
+                    }
+                }
+                continue;
+            }
+            let Some((_, n)) = table
+                .tip_macros
+                .iter()
+                .find(|(name, _)| toks[i].is_ident(text, name))
+            else {
+                continue;
+            };
+            if toks[i + 1].is_punct(text, "!") && toks[open].kind == Kind::Open('(') {
+                let Some(close) = matching(toks, open) else {
+                    continue;
+                };
+                if let Some(&(a, b)) = args(text, toks, open, close).get(n.saturating_sub(1)) {
+                    if b - a == 1 && toks[a].kind == Kind::Ident {
+                        sinks.idents.push(a);
+                    }
                 }
             }
         }
-        out
+        sinks
+    }
+
+    fn rewrite(
+        &self,
+        text: &str,
+        toks: &[Tok],
+        file: &str,
+        report: &mut Report,
+        edits: &mut Vec<Edit>,
+    ) {
+        for &(tip, open, close) in &self.calls {
+            edits.push((
+                toks[tip].start,
+                toks[open].end,
+                "ja_tip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&(".to_owned(),
+            ));
+            edits.push((toks[close].start, toks[close].start, ")))".to_owned()));
+        }
+        let mut wrapped: Vec<usize> = Vec::new();
+        let depth = depths(toks);
+        for &at in &self.idents {
+            let line = text[..toks[at].start].matches('\n').count() + 1;
+            match self.binding(text, toks, &depth, at) {
+                Ok(None) => {}
+                Ok(Some(b)) if wrapped.contains(&b.let_at) => {}
+                Ok(Some(b)) => {
+                    wrapped.push(b.let_at);
+                    let after = toks[b.eq].end;
+                    edits.push((after, after, " crate::ja_tip::both(||".to_owned()));
+                    let end = toks[b.semi].start;
+                    let split = match b.position {
+                        None => ")".to_owned(),
+                        Some(k) => format!(").split_{k}()"),
+                    };
+                    edits.push((end, end, split));
+                }
+                Err(why) => report.notes.push((file.to_owned(), line, why)),
+            }
+        }
+    }
+
+    /// The `let` that gives the variable at `at` its value, when it can be
+    /// made twice: in the same function, in a block around `at`, used only
+    /// as a tooltip. `Ok(None)` for a parameter (a `&'static str` one finds
+    /// its Japanese by its address).
+    fn binding(
+        &self,
+        text: &str,
+        toks: &[Tok],
+        depth: &[usize],
+        at: usize,
+    ) -> Result<Option<Binding>, String> {
+        let name = toks[at].text(text);
+        let mut lowest = depth[at];
+        let mut k = at;
+        while k > 0 {
+            k -= 1;
+            lowest = lowest.min(depth[k]);
+            let t = &toks[k];
+            if t.is_ident(text, "fn") {
+                return Ok(None);
+            }
+            // `name: Type` in a closure's or a function's parameters.
+            if t.is_ident(text, name) && toks.get(k + 1).is_some_and(|n| n.is_punct(text, ":")) {
+                return Ok(None);
+            }
+            if !t.is_ident(text, "let") || depth[k] > lowest {
+                continue;
+            }
+            let Some((position, eq)) = pattern(text, toks, k, name) else {
+                continue;
+            };
+            let semi = (eq + 1..toks.len())
+                .find(|&j| toks[j].is_punct(text, ";") && depth[j] == depth[k])
+                .ok_or_else(|| format!("ツールチップの `{name}` の let の終わりが見つからない"))?;
+            // `let tip = other;` hands on a value made elsewhere: making it
+            // twice changes nothing, and could move it twice.
+            let init = &toks[eq + 1..semi];
+            if init
+                .iter()
+                .all(|t| t.kind == Kind::Ident || t.is_punct(text, ".") || t.is_punct(text, "::"))
+            {
+                return Ok(None);
+            }
+            if toks[k + 1..eq].iter().any(|t| t.is_punct(text, ":")) {
+                return Err(format!(
+                    "ツールチップの `{name}` の let に型があるので、二度は作らない(表示は作った時の言語)"
+                ));
+            }
+            let jumps = ["return", "break", "continue", "await"];
+            if toks[eq + 1..semi]
+                .iter()
+                .any(|t| jumps.iter().any(|j| t.is_ident(text, j)) || t.is_punct(text, "?"))
+            {
+                return Err(format!(
+                    "ツールチップの `{name}` を作る式が途中で抜けるので、二度は作らない(表示は作った時の言語)"
+                ));
+            }
+            // Every later use in the let's block is a tooltip's, up to a
+            // `let` of the same name (in a block inside, only to its end).
+            let mut j = semi + 1;
+            while j < toks.len() && depth[j] >= depth[k] {
+                if toks[j].is_ident(text, "let") && pattern(text, toks, j, name).is_some() {
+                    if depth[j] == depth[k] {
+                        break;
+                    }
+                    let inner = depth[j];
+                    while j < toks.len() && depth[j] >= inner {
+                        j += 1;
+                    }
+                    continue;
+                }
+                let used = toks[j].is_ident(text, name)
+                    && !(j > 0 && toks[j - 1].is_punct(text, "."))
+                    && !self.idents.contains(&j);
+                if used {
+                    return Err(format!(
+                        "ツールチップの `{name}` がほかにも使われるので、二度は作らない(表示は作った時の言語)"
+                    ));
+                }
+                j += 1;
+            }
+            return Ok(Some(Binding {
+                let_at: k,
+                eq,
+                semi,
+                position,
+            }));
+        }
+        Ok(None)
+    }
+}
+
+struct Binding {
+    let_at: usize,
+    eq: usize,
+    semi: usize,
+    /// Which of a pair `let (a, b)` the variable is.
+    position: Option<usize>,
+}
+
+/// Whether `let` at `k` binds `name`: `let name =`, `let mut name =`, or one
+/// of `let (a, b) =`. Its place in a pair, and the `=`.
+fn pattern(text: &str, toks: &[Tok], k: usize, name: &str) -> Option<(Option<usize>, usize)> {
+    let eq = (k + 1..toks.len()).find(|&j| {
+        toks[j].is_punct(text, "=")
+            || toks[j].is_punct(text, ";")
+            || toks[j].kind == Kind::Open('{')
+    })?;
+    if !toks[eq].is_punct(text, "=") {
+        return None;
+    }
+    let names: Vec<&str> = toks[k + 1..eq]
+        .iter()
+        .take_while(|t| !t.is_punct(text, ":"))
+        .filter(|t| t.kind == Kind::Ident && !t.is_ident(text, "mut"))
+        .map(|t| t.text(text))
+        .collect();
+    let pair = toks[k + 1].kind == Kind::Open('(');
+    match (pair, names.as_slice()) {
+        (false, [only]) if *only == name => Some((None, eq)),
+        (true, [a, b]) if *a == name || *b == name => Some((Some(usize::from(*b == name)), eq)),
+        _ => None,
+    }
+}
+
+/// Each token's depth in brackets of any kind.
+fn depths(toks: &[Tok]) -> Vec<usize> {
+    let mut d = 0usize;
+    toks.iter()
+        .map(|t| match t.kind {
+            Kind::Open(_) => {
+                d += 1;
+                d - 1
+            }
+            Kind::Close(_) => {
+                d = d.saturating_sub(1);
+                d
+            }
+            _ => d,
+        })
+        .collect()
+}
+
+/// The bracket that closes the one at `open`.
+fn matching(toks: &[Tok], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (j, t) in toks.iter().enumerate().skip(open) {
+        match t.kind {
+            Kind::Open(_) => depth += 1,
+            Kind::Close(_) => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(j);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The arguments between `open` and `close`, as token ranges.
+fn args(text: &str, toks: &[Tok], open: usize, close: usize) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut start = open + 1;
+    for (j, t) in toks.iter().enumerate().take(close).skip(open + 1) {
+        match t.kind {
+            Kind::Open(_) => depth += 1,
+            Kind::Close(_) => depth = depth.saturating_sub(1),
+            Kind::Punct if depth == 0 && t.is_punct(text, ",") => {
+                out.push((start, j));
+                start = j + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < close {
+        out.push((start, close));
+    }
+    out
+}
+
+/// A function's body braces, from its `fn`.
+fn fn_body(toks: &[Tok], fn_at: usize) -> Option<(usize, usize)> {
+    let params = (fn_at..toks.len()).find(|&j| toks[j].kind == Kind::Open('('))?;
+    let after = matching(toks, params)?;
+    let open = (after..toks.len()).find(|&j| toks[j].kind == Kind::Open('{'))?;
+    Some((open, matching(toks, open)?))
+}
+
+/// Copies live elsewhere: a relative `include_str!("…")` and its kind get
+/// an absolute path.
+fn include_paths(text: &str, toks: &[Tok], path: &Path, edits: &mut Vec<Edit>) {
+    let dir = path.parent().unwrap_or(Path::new(""));
+    for i in 0..toks.len().saturating_sub(3) {
+        let name = toks[i].text(text);
+        if toks[i].kind == Kind::Ident
+            && matches!(name, "include_str" | "include_bytes" | "include")
+            && toks[i + 1].is_punct(text, "!")
+            && toks[i + 2].kind == Kind::Open('(')
+            && toks[i + 3].kind == Kind::Str
+        {
+            let Some(inner) = quoted(toks[i + 3].text(text)) else {
+                continue;
+            };
+            if !Path::new(inner).is_absolute() {
+                let abs = clean(&dir.join(inner)).display().to_string();
+                edits.push((toks[i + 3].start, toks[i + 3].end, format!("{abs:?}")));
+            }
+        }
     }
 }
 
@@ -621,7 +1122,7 @@ fn rel_in_crate(dir: &Path, file: &Path) -> PathBuf {
         .unwrap_or(f)
 }
 
-/// `..` と `.` を畳んだパス(ファイルが無くても使える)。
+/// The path with `..` and `.` folded, whether or not it exists.
 fn clean(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
@@ -636,7 +1137,7 @@ fn clean(p: &Path) -> PathBuf {
     out
 }
 
-/// `"…"` の literal の中身。r"" b"" と閉じていない物は None。
+/// What's between a `"…"`'s quotes; None for r"" b"" and an unclosed one.
 fn quoted(lit: &str) -> Option<&str> {
     lit.strip_prefix('"')?.strip_suffix('"')
 }
@@ -645,19 +1146,18 @@ fn file_name(rel: &str) -> &str {
     rel.rsplit('/').next().unwrap_or(rel)
 }
 
-fn write_if_changed(path: &Path, text: &str) {
+fn write_if_changed(path: &Path, text: &str) -> Result<(), String> {
     if std::fs::read_to_string(path).is_ok_and(|old| old == text) {
-        return;
+        return Ok(());
     }
     if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("{} を作れない: {e}", parent.display()))?;
     }
-    if let Err(e) = std::fs::write(path, text) {
-        println!("cargo:warning=ja: {} を書けない: {e}", path.display());
-    }
+    std::fs::write(path, text).map_err(|e| format!("{} を書けない: {e}", path.display()))
 }
 
-/// item の始め(属性と pub(…) の前ではなく、pub の所)。`mod` の位置から戻る。
+/// Where an item starts (at its `pub`, after its attributes), from its `mod`.
 fn item_start(text: &str, toks: &[Tok], mod_at: usize) -> usize {
     let mut i = mod_at;
     if i > 0 && toks[i - 1].kind == Kind::Close(')') {
@@ -687,9 +1187,9 @@ fn item_start(text: &str, toks: &[Tok], mod_at: usize) -> usize {
     i
 }
 
-/// item の前の `#[path = "…"]`: ((literal の始め, 終わり), 中身)。
+/// The item's `#[path = "…"]`: ((the attribute's start, end), the path).
 fn path_attribute(text: &str, toks: &[Tok], start: usize) -> Option<((usize, usize), String)> {
-    // 戻りながら、属性 `# [ … ]` を 1 つずつ見る。
+    // Back over the attributes, `# [ … ]` at a time.
     let mut end = start;
     while end >= 1 && toks[end - 1].kind == Kind::Close(']') {
         let mut j = end - 1;
@@ -724,13 +1224,8 @@ fn path_attribute(text: &str, toks: &[Tok], start: usize) -> Option<((usize, usi
     None
 }
 
-/// 根の一番外の `fn main() {` の `{` の後ろに、式を同じ行に足す。
-fn main_call(
-    text: &str,
-    toks: &[Tok],
-    call: &str,
-    edits: &mut Vec<(usize, usize, String)>,
-) -> bool {
+/// Puts `call` just inside the root's own `fn main() {`, on that line.
+fn main_call(text: &str, toks: &[Tok], call: &str, edits: &mut Vec<Edit>) -> bool {
     let mut depth = 0i32;
     for i in 0..toks.len() {
         if depth == 0
@@ -754,13 +1249,14 @@ fn main_call(
     false
 }
 
-fn apply(text: &str, mut edits: Vec<(usize, usize, String)>) -> String {
-    edits.sort_by_key(|e| (e.0, e.1));
+fn apply(text: &str, mut edits: Vec<Edit>) -> String {
+    // An insertion at a position goes before a swap that starts there.
+    edits.sort_by_key(|e| (e.0, e.1 != e.0, e.1));
     let mut out = String::with_capacity(text.len() + edits.len() * 40);
     let mut at = 0;
     for (s, e, with) in edits {
         if s < at {
-            continue; // 重なった差し替えは前の物を残す
+            continue; // overlapping swaps: the first one stays
         }
         out.push_str(&text[at..s]);
         out.push_str(&with);
@@ -770,13 +1266,14 @@ fn apply(text: &str, mut edits: Vec<(usize, usize, String)>) -> String {
     out
 }
 
-/// 根の `#![…]` と `//!` を空白にした中身(行と桁は保つ)と、外した属性。
+/// The root with its `#![…]` and `//!` blanked (lines and columns kept), and
+/// the attributes taken out.
 fn blank_inner_attributes(text: &str) -> (String, Vec<String>) {
     let toks = lex(text);
     let mut out: Vec<u8> = text.as_bytes().to_vec();
     let mut attrs = Vec::new();
     let mut i = 0;
-    // 一番外の物だけ(中の `mod x { #![…] }` は残す)。
+    // Only the outermost (a `mod x { #![…] }` keeps its own).
     let mut outer = 0i32;
     while i + 2 < toks.len() {
         match toks[i].kind {
@@ -816,9 +1313,9 @@ fn blank_inner_attributes(text: &str) -> (String, Vec<String>) {
         }
         i += 1;
     }
-    let mut s = String::from_utf8(out).unwrap_or_default();
-    // `//!` は行ごと注釈にする。
-    s = s
+    let s = String::from_utf8(out).unwrap_or_default();
+    // A `//!` line becomes a plain comment.
+    let s = s
         .lines()
         .map(|l| {
             if l.trim_start().starts_with("//!") {
@@ -843,19 +1340,37 @@ fn squash(s: &str) -> String {
     s.split_whitespace().collect::<String>()
 }
 
-/// 表に無い時に「画面の文らしい」と知らせる物: 大文字で始まり、小文字を含む。
-fn looks_like_ui(content: &str) -> bool {
-    let starts_upper = content
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_uppercase());
-    let words = content.contains(' ') && content.chars().any(|c| c.is_ascii_lowercase());
-    let one_word =
-        content.chars().count() >= 2 && content.chars().skip(1).all(|c| c.is_ascii_lowercase());
-    starts_upper && (words || one_word) && !content.contains("::")
+/// Whether a literal no table has looks like words someone reads: a
+/// sentence, or one word, capitalised or not ("Archived", "added"). Not
+/// an identifier or a key (`thread_id`, `threadId`, `header-title`), a
+/// path or address, a date pattern, or a format with nothing but holes.
+fn looks_like_words(content: &str) -> bool {
+    // A format's holes aren't words: "{name} {v}" is none.
+    let mut bare = String::new();
+    let mut depth = 0usize;
+    for c in content.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => bare.push(c),
+            _ => {}
+        }
+    }
+    let content = bare.trim();
+    let letters = content.chars().filter(char::is_ascii_alphabetic).count();
+    if letters < 2 || content.contains("::") || content.contains('%') {
+        return false;
+    }
+    if content.contains(' ') {
+        return true;
+    }
+    let word = content.trim_end_matches(['.', '…', ':', '?', '!']);
+    let mut chars = word.chars();
+    let first_ok = chars.next().is_some_and(|c| c.is_ascii_alphabetic());
+    first_ok && chars.all(|c| c.is_ascii_lowercase() || c == '\'')
 }
 
-// ── 字句 ──────────────────────────────────────────────────────────────
+// ── Tokens ──────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
@@ -888,7 +1403,8 @@ impl Tok {
     }
 }
 
-/// Rust の字句を、注釈を飛ばして並べる(literal の位置が要るだけの、軽い物)。
+/// Rust's tokens with the comments left out: enough to know where the
+/// literals are.
 pub fn lex(text: &str) -> Vec<Tok> {
     let b = text.as_bytes();
     let mut toks = Vec::new();
@@ -935,7 +1451,7 @@ pub fn lex(text: &str) -> Vec<Tok> {
         } else if c == b'\'' || (c == b'b' && b.get(i + 1) == Some(&b'\'')) {
             let start = i;
             let q = if c == b'b' { i + 1 } else { i };
-            // 'a' か '\n' なら文字、'a(閉じない)なら lifetime。
+            // 'a' or '\n' is a char; 'a with no closing quote a lifetime.
             let after = q + 1;
             if b.get(after) == Some(&b'\\') {
                 let mut j = after + 2;
@@ -1005,7 +1521,7 @@ pub fn lex(text: &str) -> Vec<Tok> {
     toks
 }
 
-/// r"…" r#"…"# br"…" の終わり。
+/// Where r"…", r#"…"# or br"…" ends.
 fn raw_string(b: &[u8], i: usize) -> Option<usize> {
     let mut j = i;
     if b.get(j) == Some(&b'b') || b.get(j) == Some(&b'c') {
@@ -1035,24 +1551,65 @@ fn raw_string(b: &[u8], i: usize) -> Option<usize> {
     }
 }
 
-// ── literal の置かれた所 ───────────────────────────────────────────────
+// ── Where a literal is ──────────────────────────────────────────────────
 
-/// literal の周り: 訳してよいか、英語のまま渡す所か、format! の書式か。
+/// Around a literal: may it be swapped, should it stay English, is it a
+/// `format!`'s format.
 pub struct Context {
-    /// 画面の文が来うる所(試験・属性・const・比べる所・型の外)。
+    /// Where words for the screen can be (not a test, an attribute, a
+    /// const, a comparison or a pattern).
     pub ui: bool,
-    /// 英語のまま渡す呼び先(ツールチップ・読み上げの名前・記録・JSON)。
+    /// Why it stays English where it's written: what it's handed to (an id,
+    /// a screen reader's name, the log, JSON, an index).
     pub keep: Option<String>,
-    /// format!(…) の最初の引数なら、(`format` の始め, `(` の終わり)。
+    /// The first argument of `format!(…)`: (`format`'s start, the `(`'s end).
     pub format_head: Option<(usize, usize)>,
+}
+
+/// A literal in a pattern or compared, inside brackets: `Some("failed") =>`,
+/// `Some(("staged", _)) =>`, `if let (Some(why), "off") =`, `==
+/// Some("claude")`. The brackets it's in close, and a match arm's `=>`, a
+/// `|` or a `let`'s `=` follows.
+fn in_pattern(text: &str, toks: &[Tok], i: usize) -> bool {
+    let wrapped = i >= 3
+        && toks[i - 1].kind == Kind::Open('(')
+        && matches!(toks[i - 2].text(text), "Some" | "Ok" | "Err");
+    if wrapped && matches!(toks[i - 3].text(text), "==" | "!=") {
+        return true;
+    }
+    // The bracket the literal is directly inside, if it's a `(`.
+    let mut depth = 0usize;
+    let open = (0..i).rev().find(|&j| match toks[j].kind {
+        Kind::Close(_) => {
+            depth += 1;
+            false
+        }
+        Kind::Open(_) if depth > 0 => {
+            depth -= 1;
+            false
+        }
+        Kind::Open(_) => true,
+        _ => false,
+    });
+    let Some(close) = open
+        .filter(|&o| toks[o].kind == Kind::Open('('))
+        .and_then(|o| matching(toks, o))
+    else {
+        return false;
+    };
+    let after = toks[close + 1..]
+        .iter()
+        .find(|t| t.kind != Kind::Close(')'))
+        .map_or("", |t| t.text(text));
+    matches!(after, "=>" | "|" | "=")
 }
 
 #[derive(Default)]
 struct Walk {
     frames: Vec<Frame>,
-    /// `#[cfg(test)]` か `#[test]` の後で、次の `{` を飛ばす。
+    /// After `#[cfg(test)]` or `#[test]`: the next `{` is skipped.
     test_next: bool,
-    /// const・static の item の中(`;` まで)。深さを持つ。
+    /// Inside a const or static item (until its `;`), at this depth.
     const_depth: Option<usize>,
 }
 
@@ -1065,16 +1622,15 @@ struct Frame {
     arg: usize,
     skip: bool,
     attr: bool,
+    /// `x[…]`: a key, not words.
+    index: bool,
 }
 
-/// ここに直に渡る文は、英語のまま(画面に描く時だけ訳す・または訳さない)。
+/// Words handed straight to these stay English: they aren't drawn, or they're
+/// a name (an id, a screen reader's), or text is matched against them.
 const KEEP: &[&str] = &[
-    // ツールチップ: 記録と自動操作の名前を兼ねる(tips.rs)。描く時に訳す。
-    "tip",
-    "tipped",
-    "tooltip",
     "aria_label",
-    // 画面の外: 記録・JSON・id・試験・止まる時の文。
+    "icon",
     "json",
     "id",
     "key_context",
@@ -1092,6 +1648,9 @@ const KEEP: &[&str] = &[
     "expect",
     "println",
     "eprintln",
+    "write",
+    "writeln",
+    "format_args",
     "unreachable",
     "matches",
     "include_str",
@@ -1101,62 +1660,32 @@ const KEEP: &[&str] = &[
     "ends_with",
     "contains",
     "strip_prefix",
+    "strip_suffix",
+    "split",
+    "rsplit",
+    "split_once",
+    "rsplit_once",
+    "splitn",
+    "replace",
+    "replacen",
+    "find",
+    "rfind",
+    "trim_start_matches",
+    "trim_end_matches",
+    "get",
     "eq",
+];
+
+/// Words that come before a `[` that starts an array, not an index.
+const BEFORE_ARRAY: &[&str] = &[
+    "in", "return", "else", "match", "if", "mut", "ref", "move", "let",
 ];
 
 impl Walk {
     fn step(&mut self, text: &str, toks: &[Tok], i: usize) {
         let t = &toks[i];
         match t.kind {
-            Kind::Open(open) => {
-                let prev = i.checked_sub(1).map(|p| &toks[p]);
-                let (callee, is_macro, macro_start) = match prev {
-                    Some(p)
-                        if p.is_punct(text, "!") && i >= 2 && toks[i - 2].kind == Kind::Ident =>
-                    {
-                        (
-                            Some(toks[i - 2].text(text).to_owned()),
-                            true,
-                            toks[i - 2].start,
-                        )
-                    }
-                    Some(p) if p.kind == Kind::Ident && open == '(' => {
-                        (Some(p.text(text).to_owned()), false, p.start)
-                    }
-                    _ => (None, false, t.start),
-                };
-                let attr = open == '['
-                    && prev.is_some_and(|p| {
-                        p.is_punct(text, "#")
-                            || p.is_punct(text, "!") && i >= 2 && toks[i - 2].is_punct(text, "#")
-                    });
-                let parent_skip = self.frames.last().is_some_and(|f| f.skip);
-                let skip = parent_skip || (open == '{' && self.test_next);
-                if open == '{' {
-                    self.test_next = false;
-                }
-                if attr {
-                    // #[cfg(test)]・#[test]・#[cfg(feature = "automation")](自動操作の
-                    // build だけの物。そこではいつも英語)。
-                    let body: String = toks[i + 1..].iter().take(6).map(|t| t.text(text)).collect();
-                    if body.starts_with("cfg(test)")
-                        || body.starts_with("test]")
-                        || body.starts_with("cfg(feature=\"automation\")")
-                    {
-                        self.test_next = true;
-                    }
-                }
-                self.frames.push(Frame {
-                    open,
-                    callee,
-                    is_macro,
-                    macro_start,
-                    open_end: t.end,
-                    arg: 0,
-                    skip,
-                    attr,
-                });
-            }
+            Kind::Open(open) => self.open(text, toks, i, open),
             Kind::Close(_) => {
                 self.frames.pop();
                 if self.const_depth.is_some_and(|d| d > self.frames.len()) {
@@ -1189,21 +1718,79 @@ impl Walk {
         }
     }
 
+    fn open(&mut self, text: &str, toks: &[Tok], i: usize, open: char) {
+        let t = &toks[i];
+        let prev = i.checked_sub(1).map(|p| &toks[p]);
+        let (callee, is_macro, macro_start) = match prev {
+            Some(p) if p.is_punct(text, "!") && i >= 2 && toks[i - 2].kind == Kind::Ident => (
+                Some(toks[i - 2].text(text).to_owned()),
+                true,
+                toks[i - 2].start,
+            ),
+            Some(p) if p.kind == Kind::Ident && open == '(' => {
+                (Some(p.text(text).to_owned()), false, p.start)
+            }
+            _ => (None, false, t.start),
+        };
+        let attr = open == '['
+            && prev.is_some_and(|p| {
+                p.is_punct(text, "#")
+                    || p.is_punct(text, "!") && i >= 2 && toks[i - 2].is_punct(text, "#")
+            });
+        let index = open == '['
+            && prev.is_some_and(|p| {
+                (p.kind == Kind::Ident && !BEFORE_ARRAY.contains(&p.text(text)))
+                    || matches!(p.kind, Kind::Close(')') | Kind::Close(']'))
+            });
+        let parent_skip = self.frames.last().is_some_and(|f| f.skip);
+        let skip = parent_skip || (open == '{' && self.test_next);
+        if open == '{' {
+            self.test_next = false;
+        }
+        if attr {
+            // #[cfg(test)], #[test], and #[cfg(feature = "automation")]: the
+            // scripted build's own, where it's always English.
+            let body: String = toks[i + 1..].iter().take(6).map(|t| t.text(text)).collect();
+            if body.starts_with("cfg(test)")
+                || body.starts_with("test]")
+                || body.starts_with("cfg(feature=\"automation\")")
+            {
+                self.test_next = true;
+            }
+        }
+        self.frames.push(Frame {
+            open,
+            callee,
+            is_macro,
+            macro_start,
+            open_end: t.end,
+            arg: 0,
+            skip,
+            attr,
+            index,
+        });
+    }
+
     fn context(&self, text: &str, toks: &[Tok], i: usize) -> Context {
         let prev = i.checked_sub(1).map(|p| toks[p].text(text)).unwrap_or("");
         let next = toks.get(i + 1).map_or("", |t| t.text(text));
         let in_skip = self.frames.iter().any(|f| f.skip || f.attr);
-        let compared = matches!(prev, "==" | "!=") || matches!(next, "==" | "!=" | "=>" | "|");
+        let compared = matches!(prev, "==" | "!=")
+            || matches!(next, "==" | "!=" | "=>" | "|")
+            || in_pattern(text, toks, i);
         let ui = !in_skip && self.const_depth.is_none() && !compared;
-        // 一番近い呼び出し(`{` と `[` は通り抜ける)。
+        // The nearest call (through `{` and `[`).
         let call = self
             .frames
             .iter()
             .rev()
             .find(|f| f.open == '(' || f.is_macro);
-        let keep = call
-            .and_then(|f| f.callee.clone())
-            .filter(|c| KEEP.contains(&c.as_str()));
+        let keep = if self.frames.last().is_some_and(|f| f.index) {
+            Some("index".to_owned())
+        } else {
+            call.and_then(|f| f.callee.clone())
+                .filter(|c| KEEP.contains(&c.as_str()))
+        };
         let format_head = self.frames.last().and_then(|f| {
             (f.is_macro && f.callee.as_deref() == Some("format") && f.arg == 0)
                 .then_some((f.macro_start, f.open_end))
@@ -1220,12 +1807,17 @@ impl Walk {
 mod tests {
     use super::*;
 
-    fn rewrite(src: &str, table: &str) -> (String, Report) {
-        let dir = std::env::temp_dir().join(format!(
-            "ja-mirror-{}-{}",
-            std::process::id(),
-            src.len() + table.len()
-        ));
+    struct Copied {
+        text: String,
+        report: Report,
+        table: String,
+    }
+
+    /// Copies `src` as src/a.rs with `table` as its table, the way a crate is.
+    fn copy_as(side: Side, src: &str, table: &str) -> Copied {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("ja-mirror-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::create_dir_all(dir.join("ja")).unwrap();
@@ -1234,86 +1826,292 @@ mod tests {
         std::fs::write(dir.join("src/a.rs"), src).unwrap();
         std::fs::write(dir.join("ja/lib.rs"), "").unwrap();
         std::fs::write(dir.join("tables/a.txt"), table).unwrap();
-        let c = Crate {
+        let report = mirror(&Crate {
             dir: dir.clone(),
             root: "src/lib.rs",
             stub: "ja/lib.rs",
             tables: dir.join("tables"),
-            runtime: "crate::ja",
-            format_macro: "crate::ja_format!",
+            side,
             first: None,
             extra: vec![],
             main_call: None,
             out: dir.join("out"),
-        };
-        let report = mirror(&c);
-        let out = std::fs::read_to_string(dir.join("out/ja/src/a.rs")).unwrap();
+        });
+        let text = std::fs::read_to_string(dir.join("out/ja/src/a.rs")).unwrap_or_default();
+        let (file, _) = side.table_file();
+        let table = std::fs::read_to_string(dir.join("out/ja").join(file)).unwrap_or_default();
         let _ = std::fs::remove_dir_all(&dir);
-        (out, report)
+        Copied {
+            text,
+            report,
+            table,
+        }
+    }
+
+    fn copy(src: &str, table: &str) -> Copied {
+        copy_as(Side::Core, src, table)
     }
 
     #[test]
-    fn a_literal_on_screen_picks_its_language() {
-        let (out, r) = rewrite(
+    fn a_literal_on_screen_picks_its_language_from_the_table() {
+        let c = copy(
             "fn f() -> &'static str {\n    \"Dismiss\"\n}\n",
             "\"Dismiss\" = \"閉じる\"\n",
         );
         assert_eq!(
-            out,
-            "fn f() -> &'static str {\n    crate::ja::t(\"Dismiss\", \"閉じる\")\n}\n"
+            c.text,
+            "fn f() -> &'static str {\n    crate::ja::t(&crate::ja::TABLE[0])\n}\n"
         );
-        assert_eq!(r.translated.len(), 1);
+        assert!(c.table.contains("pub static TABLE: [(&str, &str); 1] = ["));
+        assert!(c.table.contains("(\"Dismiss\", \"閉じる\"),"));
+        assert_eq!(c.report.translated.len(), 1);
+        assert!(c.report.errors.is_empty(), "{:?}", c.report.errors);
     }
 
     #[test]
     fn a_format_keeps_its_arguments_and_its_lines() {
         let src = "fn f(t: &str) -> String {\n    format!(\n        \"Open {t}\",\n    )\n}\n";
-        let (out, _) = rewrite(src, "\"Open {t}\" = \"{t} を開く\"\n");
-        assert_eq!(out.lines().count(), src.lines().count());
+        let c = copy(src, "\"Open {t}\" = \"{t} を開く\"\n");
+        assert_eq!(c.text.lines().count(), src.lines().count());
         assert!(
-            out.contains("crate::ja_format!(\"{t} を開く\", \n        \"Open {t}\","),
-            "{out}"
+            c.text
+                .contains("ja_format!(\"{t} を開く\", \n        \"Open {t}\","),
+            "{}",
+            c.text
         );
     }
 
     #[test]
-    fn tooltips_logs_tests_and_comparisons_stay_english() {
-        let src = "fn f(e: E) -> E {\n    e.tip(\"Copy\").child(\"Copy\")\n}\nfn g(x: &str) -> bool { x == \"Copy\" }\nconst C: &str = \"Copy\";\n#[cfg(test)]\nmod tests {\n    fn h() { \"Copy\"; }\n}\n";
-        let (out, r) = rewrite(src, "\"Copy\" = \"コピー\"\n");
+    fn names_logs_tests_and_comparisons_stay_english() {
+        let src = "fn f(e: E) -> E {\n    e.aria_label(\"Copy\").child(\"Copy\")\n}\nfn g(x: &str) -> bool { x == \"Copy\" }\nconst C: &str = \"Copy\";\nfn k(v: V) -> V { v[\"Copy\"] }\nfn m(x: Option<&str>, y: &str) -> u8 { match x { Some(\"Copy\") | None => 1, _ if x == Some(\"Copy\") => 2, _ => match (x, y) { (Some(_), \"Copy\") => 3, _ => 4 } } }\nfn n(p: Option<(&str, u8)>) -> u8 { if let Some((\"Copy\", r)) = p { r } else { 0 } }\nfn o(a: A) -> B { match a { A => b(\"Copy\", 1), _ => c } }\n#[cfg(test)]\nmod tests {\n    fn h() { \"Copy\"; }\n}\n";
+        let c = copy(src, "\"Copy\" = \"コピー\"\n");
         assert!(
-            out.contains("e.tip(\"Copy\").child(crate::ja::t(\"Copy\", \"コピー\"))"),
-            "{out}"
+            c.text
+                .contains("e.aria_label(\"Copy\").child(crate::ja::t(&crate::ja::TABLE[0]))"),
+            "{}",
+            c.text
         );
-        assert!(out.contains("x == \"Copy\""));
-        assert!(out.contains("const C: &str = \"Copy\";"));
-        assert!(out.contains("fn h() { \"Copy\"; }"));
-        assert_eq!(r.translated.len(), 1);
-        assert_eq!(r.kept.len(), 1);
+        assert!(c.text.contains("x == \"Copy\""));
+        assert!(c.text.contains("const C: &str = \"Copy\";"));
+        assert!(c.text.contains("v[\"Copy\"]"));
+        assert!(c.text.contains(
+            "Some(\"Copy\") | None => 1, _ if x == Some(\"Copy\") => 2, _ => match (x, y) { (Some(_), \"Copy\") => 3"
+        ));
+        assert!(c.text.contains("if let Some((\"Copy\", r)) = p"));
+        // An arm's words aren't its pattern.
+        assert!(
+            c.text
+                .contains("A => b(crate::ja::t(&crate::ja::TABLE[0]), 1)"),
+            "{}",
+            c.text
+        );
+        assert!(c.text.contains("fn h() { \"Copy\"; }"));
+        assert_eq!(c.report.translated.len(), 2);
+        assert_eq!(c.report.kept.len(), 2);
     }
 
     #[test]
-    fn a_tip_entry_is_left_for_the_tooltip_to_draw() {
-        let (out, r) = rewrite(
-            "fn f(p: &str) -> String { format!(\"In {}\", p) }\n",
-            "tip \"In {}\" = \"{} の中\"\n",
+    fn a_tip_entry_is_english_where_written_and_found_by_its_row() {
+        let c = copy(
+            "fn f(e: E) -> E { e.id(\"Only you\").child(\"Only you\") }\n",
+            "tip \"Only you\" = \"自分だけ\"\n",
         );
-        assert!(out.contains("format!(\"In {}\", p)"));
-        assert_eq!(r.draw, vec![("In {}".to_owned(), "{} の中".to_owned())]);
+        assert!(
+            c.text
+                .contains("e.id(\"Only you\").child(crate::ja::TABLE[0].0)"),
+            "{}",
+            c.text
+        );
     }
 
     #[test]
-    fn new_words_and_gone_words_are_reported() {
-        let (_, r) = rewrite(
-            "fn f(e: E) -> E { e.child(\"Brand new words\") }\n",
-            "\"Not there any more\" = \"もう無い\"\n",
+    fn new_words_lowercase_words_and_gone_words_are_reported() {
+        let c = copy(
+            "fn f(e: E) -> E { e.child(\"Brand new words\").child(\"added\").tip(\"A new tooltip\").id(\"header-title\").child(\"threadId\").child(\"Skipped words\") }\n",
+            "\"Not there any more\" = \"もう無い\"\nskip \"Skipped words\"\nskip \"Gone too\"\n",
         );
-        assert_eq!(r.missing.len(), 1);
-        assert_eq!(r.missing[0].2, "Brand new words");
-        assert_eq!(r.stale.len(), 1);
+        let missing: Vec<&str> = c.report.missing.iter().map(|m| m.2.as_str()).collect();
+        assert_eq!(missing, ["Brand new words", "added", "A new tooltip"]);
+        let stale: Vec<&str> = c.report.stale.iter().map(|s| s.1.as_str()).collect();
+        assert_eq!(stale, ["Not there any more", "skip Gone too"]);
     }
 
     #[test]
-    fn a_table_rejects_an_em_dash() {
+    fn a_replace_that_misses_or_matches_twice_stops_the_build() {
+        let src = "fn f() { a(); a(); b(); }\n";
+        let missed = copy(src, "replace: c();\nwith: d();\n");
+        assert_eq!(missed.report.errors.len(), 1, "{:?}", missed.report.errors);
+        assert!(missed.report.errors[0].contains("tables/a.txt:1"));
+        assert!(missed.report.errors[0].contains("0 か所"));
+        let twice = copy(src, "\n\nreplace: a();\nwith: d();\n");
+        assert!(twice.report.errors[0].contains("tables/a.txt:3"));
+        assert!(twice.report.errors[0].contains("2 か所"));
+        let once = copy(src, "replace: b();\nwith: d();\n");
+        assert!(once.report.errors.is_empty());
+        assert!(once.text.contains("a(); a(); d();"));
+        let all = copy(src, "replace all: a();\nwith: d();\n");
+        assert!(all.report.errors.is_empty());
+        assert!(all.text.contains("d(); d(); b();"));
+    }
+
+    #[test]
+    fn a_copy_that_cant_be_written_stops_the_build() {
+        let mut m = Mirror {
+            c: &Crate {
+                dir: PathBuf::new(),
+                root: "src/lib.rs",
+                stub: "ja/lib.rs",
+                tables: PathBuf::new(),
+                side: Side::Core,
+                first: None,
+                extra: vec![],
+                main_call: None,
+                out: PathBuf::new(),
+            },
+            tables: BTreeMap::new(),
+            report: Report::default(),
+        };
+        // A folder can't be written over as a file.
+        m.write(&std::env::temp_dir(), "x");
+        assert_eq!(m.report.errors.len(), 1);
+    }
+
+    #[test]
+    fn a_tooltip_call_is_made_twice_and_its_variable_too() {
+        let src = "fn f(e: E, p: &str) -> E {\n    let tip = format!(\"In {p}\");\n    e.tip(tip).child(\"x\")\n}\n";
+        let c = copy_as(
+            Side::Gpui,
+            src,
+            "tip-method: tip\n\"In {p}\" = \"{p} の中\"\n",
+        );
+        assert_eq!(c.text.lines().count(), src.lines().count());
+        assert!(
+            c.text.contains("let tip = crate::ja_tip::both(|| threadbear_core::ja_format!(\"{p} の中\", \"In {p}\"));"),
+            "{}",
+            c.text
+        );
+        assert!(
+            c.text.contains(
+                "e.ja_tip(crate::ja_tip::faces(|| ::std::clone::Clone::clone(&(tip)))).child"
+            ),
+            "{}",
+            c.text
+        );
+        assert!(c.report.notes.is_empty(), "{:?}", c.report.notes);
+    }
+
+    #[test]
+    fn a_tooltip_macro_s_variable_from_a_pair_is_made_twice() {
+        let src = "fn f(e: E) -> E {\n    let (text, tip) = match x { _ => (format!(\"A {x}\"), format!(\"B {x}\")) };\n    tipped!(e, tip).child(text)\n}\n";
+        let c = copy_as(
+            Side::Gpui,
+            src,
+            "tip-macro: tipped! 2\n\"A {x}\" = \"甲 {x}\"\n\"B {x}\" = \"乙 {x}\"\n",
+        );
+        assert!(
+            c.text
+                .contains("let (text, tip) = crate::ja_tip::both(|| match"),
+            "{}",
+            c.text
+        );
+        assert!(c.text.contains(").split_1();"), "{}", c.text);
+    }
+
+    #[test]
+    fn a_tooltip_variable_used_elsewhere_or_left_early_is_noted_not_wrapped() {
+        let src = "fn f(e: E) -> E {\n    let tip = format!(\"In {p}\");\n    log(&tip);\n    let other = x?;\n    tipped!(e, tip).tip(other)\n}\n";
+        let c = copy_as(
+            Side::Gpui,
+            src,
+            "tip-macro: tipped 2\ntip-method: tip\n\"In {p}\" = \"{p} の中\"\n",
+        );
+        assert!(!c.text.contains("crate::ja_tip::both"), "{}", c.text);
+        assert_eq!(c.report.notes.len(), 2, "{:?}", c.report.notes);
+        assert!(c.report.notes[0].2.contains("ほかにも使われる"));
+        assert!(c.report.notes[1].2.contains("途中で抜ける"));
+    }
+
+    #[test]
+    fn a_let_of_the_same_name_inside_doesnt_count_as_a_use() {
+        let src = "fn f(e: E) -> E {\n    let tip = format!(\"In {p}\");\n    tipped!(e, tip).when(|s| { let tip = format!(\"In {p}\"); tipped!(s, tip) })\n}\n";
+        let c = copy_as(
+            Side::Gpui,
+            src,
+            "tip-macro: tipped! 2\n\"In {p}\" = \"{p} の中\"\n",
+        );
+        assert_eq!(
+            c.text.matches("crate::ja_tip::both(||").count(),
+            2,
+            "{}",
+            c.text
+        );
+        assert!(c.report.notes.is_empty(), "{:?}", c.report.notes);
+    }
+
+    #[test]
+    fn a_tooltip_parameter_or_handed_on_value_is_not_made_twice() {
+        let src = "fn f(e: E, tip: &'static str, s: S) -> E {\n    let tip_text = 1;\n    let other = s.words;\n    e.tip(tip).tip(other)\n}\n";
+        let c = copy_as(Side::Gpui, src, "tip-method: tip\n");
+        assert!(c.text.contains("e.ja_tip("), "{}", c.text);
+        assert!(!c.text.contains("both"), "{}", c.text);
+        assert!(c.report.notes.is_empty(), "{:?}", c.report.notes);
+    }
+
+    #[test]
+    fn another_type_s_tip_method_is_left_alone() {
+        let src = "fn f(row: Row) -> Row {\n    row.tip(\"Some words\")\n}\n";
+        let c = copy_as(Side::Gpui, src, "\"Some words\" = \"言葉\"\n");
+        assert!(
+            c.text
+                .contains("row.tip(threadbear_core::ja::t(&crate::ja_table::TABLE[0]))"),
+            "{}",
+            c.text
+        );
+    }
+
+    #[test]
+    fn a_made_function_runs_its_body_twice() {
+        let src = "pub fn icon_tooltip(a: &A) -> String {\n    a.lines().join(\"\\n\")\n}\n";
+        let c = copy(src, "made: icon_tooltip\n");
+        assert_eq!(
+            c.text,
+            "pub fn icon_tooltip(a: &A) -> String { crate::ja::made(\"icon_tooltip\", || {\n    a.lines().join(\"\\n\")\n})}\n"
+        );
+        let missing = copy(src, "made: gone\n");
+        assert!(missing.report.errors[0].contains("made: gone"));
+    }
+
+    #[test]
+    fn a_table_rejects_an_em_dash_and_an_empty_entry() {
         assert!(parse_table("t", "\"A\" = \"あ—い\"\n").is_err());
+        assert!(parse_table("t", "\"A\" = \"\"\n").is_err());
+        assert!(parse_table("t", "replace: x\nreplace: y\nwith: z\n").is_err());
+    }
+
+    #[test]
+    fn words_on_the_screen_are_told_from_keys() {
+        for words in [
+            "Archived",
+            "added",
+            "Couldn't reach it.",
+            "Sign in…",
+            "a quiet minute",
+        ] {
+            assert!(looks_like_words(words), "{words}");
+        }
+        for key in [
+            "threadId",
+            "header-title",
+            "thread_id",
+            "/x/claude",
+            "%-d %b",
+            "a",
+            "{}",
+            "v1",
+            "{name} {v}",
+            " [{button}]",
+        ] {
+            assert!(!looks_like_words(key), "{key}");
+        }
     }
 }

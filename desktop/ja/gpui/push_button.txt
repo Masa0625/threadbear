@@ -1,0 +1,7 @@
+# gpui/src/push_button.rs: PushButton はツールチップを SharedString で持って、
+# 描く時に渡す。表の literal は自分の置き場ごと持つ(desktop/ja/tip.rs の keep)
+# ので、渡った先のツールチップで、名前は英語、表示は日本語になる。
+replace: tip: impl Into<SharedString>,
+with: tip: impl Into<SharedString> + AsRef<str>,
+replace: tip: tip.into(),
+with: tip: crate::ja_tip::keep(tip),
